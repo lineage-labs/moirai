@@ -40,6 +40,12 @@ export class AxlAdapter implements INetworkAdapter {
 
     const keyPair = await this.resolveKeyPair();
 
+    if (process.env.AXL_DEBUG === "1") {
+      console.log(
+        `[AxlAdapter:${this.cfg.selfId}] connect axlUrl=${this.cfg.axlUrl} pubkey=${(keyPair as { publicKeyHex?: string }).publicKeyHex ?? "<unknown>"}`,
+      );
+    }
+
     const gossipOpts: ConstructorParameters<typeof Gossip>[0] = {
       axlUrl: this.cfg.axlUrl,
       keyPair,
@@ -51,6 +57,17 @@ export class AxlAdapter implements INetworkAdapter {
       gossipOpts.subscriptionTtlMs = this.cfg.subscriptionTtlMs;
 
     this.gossip = new Gossip(gossipOpts);
+    if (process.env.AXL_DEBUG === "1") {
+      this.gossip.on("error", (err: unknown) => {
+        console.error(`[AxlAdapter:${this.cfg.selfId}] gossip error:`, err);
+      });
+      this.gossip.on("peer-joined", (p: { pubkey: string; topics: string[] }) => {
+        console.log(`[AxlAdapter:${this.cfg.selfId}] peer-joined ${p.pubkey} topics=${JSON.stringify(p.topics)}`);
+      });
+      this.gossip.on("peer-left", (p: { pubkey: string }) => {
+        console.log(`[AxlAdapter:${this.cfg.selfId}] peer-left ${p.pubkey}`);
+      });
+    }
     await this.gossip.start();
 
     const directTopic = `${this.topicPrefix}.peer.${this.cfg.selfId}`;

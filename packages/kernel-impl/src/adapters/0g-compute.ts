@@ -1,5 +1,8 @@
 import { ethers } from "ethers";
 import { createRequire } from "node:module";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import type { Receipt } from "@moirai/shared";
 import type { IComputeAdapter, InferOpts, InferResult } from "@moirai/kernel";
@@ -29,9 +32,13 @@ type ResolvedService = {
   verifiability: string;
 };
 
+/** Matches `LedgerProcessor.MIN_LEDGER_BALANCE_OG` in `@0glabs/0g-serving-broker`. */
+const MIN_LEDGER_OG = 3;
+
 export class ZeroGComputeAdapter implements IComputeAdapter {
   private brokerPromise: Promise<ZGComputeNetworkBroker> | null = null;
   private readonly acknowledged = new Set<string>();
+  private readonly teeAttestationByProvider = new Map<string, boolean>();
   private cachedTeeMl: ResolvedService | null = null;
   private cachedAny: ResolvedService | null = null;
   private cachedPinned: ResolvedService | null = null;
@@ -53,7 +60,57 @@ export class ZeroGComputeAdapter implements IComputeAdapter {
   }
 
   async verifyReceipt(receipt: Receipt): Promise<boolean> {
-    return receipt.verifiable;
+    if (!receipt.verifiable || !receipt.providerAddress) return false;
+
+    const cached = this.teeAttestationByProvider.get(receipt.providerAddress);
+    if (cached !== undefined) return cached;
+
+    const broker = await this.getBroker();
+    const tmp = await mkdtemp(join(tmpdir(), "moirai-tee-verify-"));
+    try {
+      const result = await broker.inference.verifyService(receipt.providerAddress, tmp);
+      const valid =
+        result?.success === true && result.signerVerification?.allMatch === true;
+      this.teeAttestationByProvider.set(receipt.providerAddress, valid);
+      return valid;
+    } catch {
+      this.teeAttestationByProvider.set(receipt.providerAddress, false);
+      return false;
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  /**
+   * Ensures an on-chain 0G Compute ledger exists and tops up the selected TeeML provider's
+   * inference sub-account when it is low. Call before `infer(..., { verifiable: true })` in spikes
+   * or long-lived runtimes.
+   */
+  async ensureComputeLedgerAndInferenceFunds(options?: {
+    /** Initial ledger balance when creating (minimum 3 OG). Default 3. */
+    createLedgerOg?: number;
+    /** Top up provider sub-account by this amount when below threshold. Default 1 OG. */
+    inferenceTopUpWei?: bigint;
+    /** If sub-account balance is below this, run top-up. Default 0.1 OG. */
+    minInferenceSubWei?: bigint;
+  }): Promise<void> {
+    const broker = await this.getBroker();
+    try {
+      await broker.ledger.getLedger();
+    } catch {
+      const og = Math.max(options?.createLedgerOg ?? MIN_LEDGER_OG, MIN_LEDGER_OG);
+      await broker.ledger.addLedger(og);
+    }
+
+    const svc = await this.resolveService(true);
+    await this.ensureAcknowledged(broker, svc.providerAddress);
+
+    const [sub] = await broker.inference.getAccountWithDetail(svc.providerAddress);
+    const minWei = options?.minInferenceSubWei ?? ethers.parseEther("0.1");
+    const topUp = options?.inferenceTopUpWei ?? ethers.parseEther("1");
+    if (sub.balance < minWei) {
+      await broker.ledger.transferFund(svc.providerAddress, "inference", topUp);
+    }
   }
 
   private async getBroker(): Promise<ZGComputeNetworkBroker> {

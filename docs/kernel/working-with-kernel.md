@@ -1,98 +1,142 @@
 # Working With Kernel
 
-This guide explains how to work on the kernel in this repo without breaking the contract between `@moirai/kernel` and `@moirai/kernel-impl`.
+This is the teammate handoff doc for the kernel surface, adapter testing, and current status.
 
-## Package Roles
+## Package Boundaries
 
-- `@moirai/kernel` is the contract package (types and interfaces only).
-- `@moirai/kernel-impl` is the real implementation package (adapters + `evolve()` + `createKernel` wiring).
+- `@moirai/kernel` is the contract package (interfaces + kernel types/errors only).
+- `@moirai/kernel-impl` is the implementation package (real adapters + `evolve()` + `createKernel` wiring).
+- Keep implementation code out of `@moirai/kernel`; consume adapters only through interfaces.
 
-Keep these boundaries strict:
+## Exposed API (What Your Teammate Can Import)
 
-- Put shared kernel types/interfaces in `packages/kernel/src`.
-- Put runtime logic in `packages/kernel-impl/src`.
-- Do not add implementation code to `@moirai/kernel`.
+### From `@moirai/kernel`
 
-## Core Contract Invariants
+`packages/kernel/src/index.ts` re-exports:
 
-When changing kernel behavior, preserve these invariants:
+- `IComputeAdapter`, `IStorageAdapter`, `INetworkAdapter`, `InferOpts`, `InferResult`, `AxlInbound`
+- `Kernel`, `KernelConfig`, `CreateKernel`
+- `EvolveInput`, `EvolveResult`, `EvolveAcceptance`, `EvolveRejection`
+- `EvolveError`
 
-- `Kernel` exposes `compute`, `storage`, `net`, and `evolve(input)`.
-- `evolve()` hero path uses verifiable compute for reasoning and self-eval.
-- Skill acceptance threshold is `0.6 - (personality.risk - 0.5) * 0.4`.
-- Accepted skills must include both provenance receipts:
-  - `reasonReceipt`
-  - `selfEvalReceipt`
-- Event order in evolve flow must remain:
-  - `REASONING_STARTED`
-  - `SKILL_PROPOSED`
-  - `SELF_EVAL_STARTED`
-  - `SELF_EVAL_RESULT`
-  - `SKILL_ACCEPTED` or `SKILL_REJECTED`
-
-## Adapter Boundaries
-
-All runtime integrations stay behind interfaces:
+Interface methods:
 
 - `IComputeAdapter`
+  - `infer(prompt, opts)`
+  - `verifyReceipt(receipt)`
 - `IStorageAdapter`
+  - `putSkill(skill)`
+  - `getSkill(id)`
+  - `listSkills()`
+  - `appendEvent(event)`
 - `INetworkAdapter`
+  - `whisper(peerId, payload)`
+  - `broadcast(payload)`
+  - `subscribe(handler)`
+  - `topology()`
+  - `myPeerId()`
 
-Implementation files:
+Kernel shape:
 
-- `packages/kernel-impl/src/adapters/0g-compute.ts`
-- `packages/kernel-impl/src/adapters/0g-storage.ts`
-- `packages/kernel-impl/src/adapters/axl.ts`
+- `compute`, `storage`, `net`
+- `evolve(input)`
 
-Kernel logic must consume interfaces, not concrete adapter classes.
+### From `@moirai/kernel-impl`
 
-## Local Development Workflow
+`packages/kernel-impl/src/index.ts` exports:
 
-From repo root:
+- `createKernel(config)`
+- `ZeroGComputeAdapter`, `ZeroGComputeConfig`
+- `ZeroGStorageAdapter`, `ZeroGStorageConfig`
+- `AxlAdapter`, `AxlConfig`
 
-```bash
-pnpm -C packages/kernel typecheck
-pnpm -C packages/kernel-impl typecheck
-pnpm -C packages/kernel-impl test
-```
+Notable non-interface helper methods in concrete adapters:
 
-Use tests for runtime checks. Current tests for evolve behavior live in:
+- `ZeroGComputeAdapter.ensureComputeLedgerAndInferenceFunds(...)`
+- `ZeroGStorageAdapter.seedSkillRoot(...)`
+- `ZeroGStorageAdapter.getSkillRoot(...)`
+- `ZeroGStorageAdapter.getAllSkillRoots()`
+- `ZeroGStorageAdapter.getEventBuffer()`
+- `ZeroGStorageAdapter.flushEvents()`
 
-- `packages/kernel-impl/src/evolve.test.ts`
+## How to Test
 
-## Runtime Smoke Testing Notes
+Run all commands from repo root.
 
-Do not run Node directly against `src/*.ts` ESM entrypoints in `kernel-impl` for quick smoke checks. Source files use `.js` import specifiers intended for TypeScript/Vitest workflows and transpiled output.
-
-Preferred smoke check path:
-
-1. Validate types:
-
-```bash
-pnpm -C packages/kernel-impl typecheck
-```
-
-2. Run behavior tests:
+### 1) Kernel Logic (`evolve`) Tests
 
 ```bash
-pnpm -C packages/kernel-impl test
+pnpm -C packages/kernel-impl exec vitest run src/evolve.test.ts
 ```
 
-If you need CLI runtime validation, add or run a Vitest smoke test instead of importing `src/index.ts` with raw Node.
+### 2) AXL Adapter Integration Tests (Real 3-node mesh)
 
-## Change Checklist
+```bash
+pnpm axl:mesh:keys
+pnpm axl:mesh:up
+bash scripts/axl-mesh-check.sh
+AXL_URL_1=http://127.0.0.1:19002 \
+AXL_URL_2=http://127.0.0.1:19012 \
+AXL_URL_3=http://127.0.0.1:19022 \
+  pnpm -C packages/kernel-impl exec vitest run src/adapters/axl.test.ts
+pnpm axl:mesh:down
+```
 
-Before finishing kernel work:
+Notes:
 
-- Typecheck passes for `kernel` and `kernel-impl`.
-- `kernel-impl` tests pass.
-- Event order in evolve flow is unchanged unless intentionally coordinated.
-- No contract drift between `@moirai/kernel` and `@moirai/kernel-impl`.
-- No accidental edits to `@moirai/shared` unless explicitly coordinated.
+- Adapter keys must match daemon PEM keys (otherwise `X-From-Peer-Id ... does not match envelope.from ...`).
+- For deep AXL debugging, set `AXL_DEBUG=1`.
 
-## Common Pitfalls
+### 3) 0G Adapter + Real-Network Smoke (`spike`)
 
-- Adding TS project references that force `composite` settings in sibling packages without coordination.
-- Testing ESM TypeScript source with raw Node import paths.
-- Importing runtime values from contract packages in ways that depend on unbuilt source paths.
-- Introducing non-verifiable fallback behavior in hero-path reasoning/self-eval.
+```bash
+pnpm -C packages/kernel-impl spike
+```
+
+This spike checks:
+
+- 0G Compute ledger/account readiness (`ensureComputeLedgerAndInferenceFunds`)
+- verifiable inference (`infer(..., { verifiable: true })`)
+- receipt attestation check (`verifyReceipt`)
+- 0G Storage roundtrip (`putSkill` + `getSkill`)
+- optional AXL whisper/broadcast roundtrip if AXL URLs are set
+
+To run only 0G paths (skip AXL section):
+
+```bash
+AXL_URL= AXL_URL_1= AXL_URL_2= AXL_URL_3= pnpm -C packages/kernel-impl spike
+```
+
+## Required Env Vars
+
+Minimum for 0G:
+
+- `ZG_RPC_URL`
+- `ZG_PRIVATE_KEY`
+- `ZG_INDEXER_URL`
+
+AXL mesh defaults used by tests:
+
+- `AXL_URL_1=http://127.0.0.1:19002`
+- `AXL_URL_2=http://127.0.0.1:19012`
+- `AXL_URL_3=http://127.0.0.1:19022`
+
+Optional AXL key overrides:
+
+- `AXL_KEY_PATH_1`
+- `AXL_KEY_PATH_2`
+- `AXL_KEY_PATH_3`
+
+## Current Status (As Of This Update)
+
+- `src/evolve.test.ts`: passing
+- `src/adapters/axl.test.ts`: passing (12/12)
+- AXL spike crash due to key mismatch has been fixed by loading daemon PEM keys in `spike.ts`
+- 0G Compute path is working in spike
+- 0G Storage `putSkill` can currently fail with `503` when testnet indexer is unavailable (`ZG_INDEXER_URL` outage); this is external infra availability, not a kernel contract failure
+
+## Practical Guardrails
+
+- Keep event contract/order in `evolve()` intact unless intentionally coordinated.
+- Keep all runtime integrations behind `IComputeAdapter` / `IStorageAdapter` / `INetworkAdapter`.
+- Do not test kernel TypeScript source with raw Node imports; use Vitest or built output paths.

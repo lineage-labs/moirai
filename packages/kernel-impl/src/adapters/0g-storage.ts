@@ -145,13 +145,26 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     const signer = await this.getSigner();
     const bytes = new TextEncoder().encode(JSON.stringify(skill));
     const data = new MemData(bytes);
-    // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
-    const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
-    if (err) throw err;
-    if (!result?.rootHash) throw new Error("0G Storage upload returned no rootHash");
-    this.skillRoots.set(skill.id, result.rootHash);
-    this.skillCache.set(skill.id, skill);
-    return { id: skill.id };
+    try {
+      // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
+      const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
+      if (err) throw err;
+      if (!result?.rootHash) throw new Error("0G Storage upload returned no rootHash");
+      this.skillRoots.set(skill.id, result.rootHash);
+      this.skillCache.set(skill.id, skill);
+      return { id: skill.id };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        const bal = await signer.provider!.getBalance(signer.address);
+        console.error(
+          `[ZeroGStorageAdapter] putSkill failed for ${skill.id} (${signer.address}): ${msg}. Native balance: ${ethers.formatEther(bal)} (need fee+gas; pair ZG_RPC_URL with matching ZG_INDEXER_URL).`,
+        );
+      } catch {
+        console.error(`[ZeroGStorageAdapter] putSkill failed for ${skill.id}: ${msg}`);
+      }
+      throw e;
+    }
   }
 
   private async downloadSkill(rootHash: string): Promise<Skill | null> {

@@ -10,7 +10,10 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "simulate:run": "bash ./scripts/simulate-run.sh"
+    "simulate:run": "bash ./scripts/simulate-run.sh",
+    "axl:mesh:keys": "bash ./scripts/axl-keys.sh",
+    "axl:mesh:up": "docker compose -f docker-compose.axl.yml up -d --build",
+    "axl:mesh:down": "docker compose -f docker-compose.axl.yml down"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
