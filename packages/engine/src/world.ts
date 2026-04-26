@@ -110,12 +110,6 @@ export function applyRestEffect(world: WorldState, agentId: string): void {
   if (a.food > 0) a.needs.curiosity = Math.min(100, a.needs.curiosity + 5);
 }
 
-export function applyExperimentEffect(world: WorldState, agentId: string): void {
-  const a = world.agents[agentId];
-  if (!a?.alive) return;
-  a.needs.curiosity = 0;
-  a.needs.energy = Math.max(0, a.needs.energy - 10);
-}
 
 function randomPosition() {
   return { x: Math.random() * FIELD_W, y: Math.random() * FIELD_H };

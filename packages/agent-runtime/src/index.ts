@@ -10,15 +10,10 @@ import { SkillSet } from "./skillSet.js";
 type CreateKernel = (config: KernelConfig) => Promise<Kernel>;
 
 async function resolveCreateKernel(): Promise<CreateKernel> {
-  const mode = process.env.MOIRAI_KERNEL_MODE ?? "dev";
-  if (mode === "prod") {
-    const modulePath = process.env.MOIRAI_KERNEL_MODULE;
-    if (!modulePath) throw new Error("MOIRAI_KERNEL_MODE=prod requires MOIRAI_KERNEL_MODULE");
-    const mod = (await import(modulePath)) as { createKernel: CreateKernel };
-    return mod.createKernel;
-  }
-  const dev = await import("./__dev__/devKernel.js");
-  return dev.createKernel;
+  const modulePath = process.env.MOIRAI_KERNEL_MODULE;
+  if (!modulePath) throw new Error("MOIRAI_KERNEL_MODULE env var required");
+  const mod = (await import(modulePath)) as { createKernel: CreateKernel };
+  return mod.createKernel;
 }
 
 async function main(): Promise<void> {
@@ -52,7 +47,7 @@ async function main(): Promise<void> {
           },
         });
 
-        deps = { agentId: msg.agentId, environment, kernel, skills, crisisCautions: new Map() };
+        deps = { agentId: msg.agentId, personality, environment, kernel, skills, crisisCautions: new Map() };
 
         kernel.net.subscribe(async (peerMsg) => {
           if (!deps) return;

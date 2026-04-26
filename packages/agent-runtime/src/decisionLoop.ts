@@ -5,6 +5,7 @@ import {
   type AgentInWorld,
   type Crisis,
   type Environment,
+  type Personality,
 } from "@moirai/shared";
 import { sendToEngine } from "./parentIpc.js";
 import type { SkillSet } from "./skillSet.js";
@@ -14,6 +15,7 @@ type DeathWarningPayload = { kind: "DEATH_WARNING"; crisisType: string; crisisDe
 
 export type DecisionDeps = {
   agentId: string;
+  personality: Personality;
   environment: Environment;
   kernel: Kernel;
   skills: SkillSet;
@@ -95,6 +97,35 @@ export async function handlePeerMessage(
 
   const skill = await kernel.storage.getSkill(skillId);
   if (!skill) return;
+
+  // Personality filter: does this skill fit who I am?
+  const { personality } = deps;
+  const prompt = [
+    `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
+    `A peer is offering to teach you: "${skill.name}" — ${skill.description}`,
+    `Effect: ${skill.effect}  |  Quality score: ${skill.provenance.selfEvalScore.toFixed(2)}/1.0`,
+    `Would you adopt this skill given your personality? Reply ONLY with JSON: {"accept": boolean}`,
+  ].join("\n");
+
+  let accepted = true;
+  try {
+    const resp = await kernel.compute.infer(prompt, { verifiable: false });
+    const start = resp.text.indexOf("{");
+    const end = resp.text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      accepted = (JSON.parse(resp.text.slice(start, end + 1)) as { accept: boolean }).accept;
+    }
+  } catch {
+    // fallback: accept
+  }
+
+  if (!accepted) {
+    sendToEngine({
+      kind: "EVENT",
+      event: { type: EventType.SKILL_REJECTED_BY_PEER, tick, actorId: agentId, payload: { skillId, from: msg.from, reason: "personality_mismatch" } },
+    });
+    return;
+  }
 
   skills.add(skill);
   await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
