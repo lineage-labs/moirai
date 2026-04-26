@@ -3,5 +3,7 @@ export type Receipt = {
   verifiable: boolean;
   model?: string;
   createdAt: number;
+  providerAddress?: string;
+  usageData?: string;
   raw?: unknown;
 };
