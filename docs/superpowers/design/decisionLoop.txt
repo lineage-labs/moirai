@@ -11,3 +11,78 @@ Death warning — full story, load-bearing:
   - Each TEACH event triggers a cheap compute.infer() call (non-verifiable, background model)
   - Prompt gives personality, traits, risk, community relationship, and the full skill — LLM decides semantically
   - Fallback on parse failure: accept from community members, reject from strangers
+
+Events
+
+  - All user-visible behavior flows through the Event union — no UI hooks on non-events
+  - Every skill carry two receipts: reasonReceipt + selfEvalReceipt (both mandatory, both from compute)
+  - HIDDEN_RULE_DISCOVERED fires at most once per agent per rule (gated by discoveredRules Map in engine)
+  - SOCIAL_GRAPH_LOADED is emitted on agent init so the engine can rebuild its dispatch cache without querying storage
+  - SOCIAL_GRAPH_UPDATED fires when a new bond forms (skill accepted from peer)
+  - DEATH_WARNING is sent only to known community members (not broadcast)
+  - AXL_MESSAGE is emitted by the engine on every whisper or broadcast, not by the agent
+
+  Agents
+
+  - One Node.js process per agent, forked by the engine Supervisor
+  - Each agent has an EventQueue with priority ordering: DEATH_WARNING(1) > TEACH-elevated(2) > CRISIS(3) > TEACH-normal(4) > TICK(5)
+  - Single draining loop — no concurrent processing within one agent
+  - Crisis arrival elevates pending TEACH messages to priority 2
+  - An agent only tracks the skills it personally owns (evolved or received) — no global registry per agent
+  - A skill already in the agent's set is never re-broadcast: skills.has(id) check before broadcast
+  - A peer's skill is rejected if the agent already has a skill with >50% keyword overlap and equal or better score (hasBetterSkill)
+  - Skill acceptance uses LLM with personality + risk tolerance; fallback is inCommunity boolean if LLM fails
+  - Curiosity-driven evolution: if a skill has been used ≥ 8 times and curiosity ≥ 65, kernel.evolve() is kicked off in background to improve it
+  - On DEATH_WARNING, surviving agents store a CautionEntry and proactively evolve a skill for that crisis type if they lack one
+  - Inheritors learn from proximity-based predecessors (nearby alive agents at spawn time), not lineage
+
+  World
+
+  - 100×60 savannah field, open topology
+  - Resources: rocks, sticks, berries, water, grass
+  - Each agent starts with inventory: ["rocks", "sticks"], hunger 20, energy 80, food stock 10
+  - Hunger decay: +3/tick if food stock = 0, −5/tick if food stock > 0; death at hunger ≥ 100
+  - Energy: −cost per action, +15 on REST
+  - Curiosity: +1/tick always; +5 when resting with food; doubles if rest-curiosity rule is in effect
+  - Three hidden rules discoverable by agents:
+    - dawn-forage: tick divisible by 20 → ×2 forage yield
+    - group-farm: 2+ alive agents simultaneously farming → ×3 yield
+    - rest-curiosity: resting while well-fed → double curiosity gain
+  - Crisis schedule (default): lion at tick 40 (12-tick deadline), second lion at tick 140 (10-tick deadline)
+  - Crises expire if deadline passes without resolution (outcome: expired)
+
+  Engine
+
+  - Tick interval: 250ms (configurable via MOIRAI_TICK_MS)
+  - MOIRAI_DEV_STORAGE must be set in process.env before any agents are forked — not just in config
+  - communityGraph: in-memory bilateral bond map, rebuilt from SOCIAL_GRAPH_LOADED/SOCIAL_GRAPH_UPDATED — engine does not query storage
+  - lastSkillAttempt: per-agent map of the most recent skill+crisis pair, sent in DEATH_WARNING to community members
+  - SkillCache: in-memory index of all skill objects seen via agent events; used by APPLY_SKILL handler
+  - WORLD snapshot emitted to browser every 4 ticks (not every tick)
+  - Inheritor pool is a queue: deaths are served FIFO from config.inheritorPool
+  - Mass-death inheritance gap (all agents die same tick → nearbyAgents() returns empty → no inheritance) is a known issue, not fixed
+
+  Compute / Skills (devCompute)
+
+  - Receipts are deterministic: "0xdev" + sha256(prompt).slice(0, 28), signedAt: 0 — same prompt → same receipt → same skillId → dedup works
+  - Four prompt-type detectors: isEvalPrompt, isTickDecision, isPeerAcceptance, else→evolve
+  - Situation extraction reads only the Situation: line, not full prompt — avoids physics rules ("lions fear pointy things") polluting crisis type classification
+  - Personality-aware tick decisions: bob experiments, cara farms, alice/dave/eve forage
+  - Self-eval always returns score 0.72 (above most thresholds) → skills almost always accepted in dev mode
+  - Peer acceptance threshold: 0.65 − (risk − 0.5) × 0.3; inCommunity lowers it by 0.1
+
+  Storage (devStorage)
+
+  - Shared directory per run (MOIRAI_DEV_STORAGE), default /tmp/moirai-dev
+  - Four files: skills.json, events.json, inventories.json, socialGraph.json
+  - Writes use atomic rename + directory-based locking (mkdir lock / rmdir lock)
+  - Lock contention with 3+ concurrent agents is non-critical for the demo
+
+  Kernel interface contract
+
+  - MOIRAI_KERNEL_MODE=prod + MOIRAI_KERNEL_MODULE=<path> swaps all three adapters in one DI change
+  - Dev adapters are drop-in replacements behind IComputeAdapter, IStorageAdapter, INetworkAdapter
+  - kernel.evolve() owns the full reason → self-eval → accept/reject → persist → broadcast loop
+  - kernel.net.subscribe() delivers peer messages; agent runtime enqueues them into the priority queue
+
+✻ Baked for 2m 45s

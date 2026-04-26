@@ -61,6 +61,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const inheritorQueue = [...config.inheritorPool];
   const communityGraph = new Map<string, Set<string>>();
   const lastSkillAttempt = new Map<string, { skillId: string; skillName: string; crisisId: string }>();
+  const discoveredRules = new Map<string, Set<string>>(); // agentId → ruleIds already surfaced
 
   function addCommunityBond(a: string, b: string): void {
     if (!communityGraph.has(a)) communityGraph.set(a, new Set());
@@ -263,7 +264,11 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         const multiplier = world.tick % 20 === 0 ? (env.hiddenRules?.find(r => r.id === "dawn-forage")?.multiplier ?? 1) : 1;
         const yield_ = forageFood(world, agentId, multiplier);
         bus.emit(domainEvent(EventType.FOOD_GATHERED, world.tick, agentId, { method: "FORAGE", yield: yield_ }));
-        if (multiplier > 1) bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "dawn-forage", effect: "Foraging at dawn yields double berries" }));
+        if (multiplier > 1 && !discoveredRules.get(agentId)?.has("dawn-forage")) {
+          if (!discoveredRules.has(agentId)) discoveredRules.set(agentId, new Set());
+          discoveredRules.get(agentId)!.add("dawn-forage");
+          bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "dawn-forage", effect: "Foraging at dawn yields double berries" }));
+        }
         return;
       }
       case "FARM": {
@@ -271,7 +276,11 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         const multiplier = farmingAgents >= 2 ? (env.hiddenRules?.find(r => r.id === "group-farm")?.multiplier ?? 1) : 1;
         const yield_ = farmFood(world, agentId, multiplier);
         bus.emit(domainEvent(EventType.FOOD_GATHERED, world.tick, agentId, { method: "FARM", yield: yield_ }));
-        if (multiplier > 1) bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "group-farm", effect: "Collaborative farming yields triple food" }));
+        if (multiplier > 1 && !discoveredRules.get(agentId)?.has("group-farm")) {
+          if (!discoveredRules.has(agentId)) discoveredRules.set(agentId, new Set());
+          discoveredRules.get(agentId)!.add("group-farm");
+          bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "group-farm", effect: "Collaborative farming yields triple food" }));
+        }
         return;
       }
       case "REST":
