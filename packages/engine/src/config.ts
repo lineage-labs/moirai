@@ -13,6 +13,7 @@ export type EngineConfig = {
   /** Personality IDs reserved for late-spawn (inheritance-demo) agents. */
   inheritorPool: string[];
   episodePersistenceDir: string;
+  devStorageDir?: string;
 };
 
 const DEFAULT_AGENT_IDS = ["alice", "bob", "cara"];
@@ -47,5 +48,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): EngineConfig {
     forcedDeaths: parseForcedDeaths(env.MOIRAI_FORCED_DEATHS),
     inheritorPool,
     episodePersistenceDir: env.MOIRAI_EPISODE_DIR ?? "/tmp/moirai-episodes",
+    ...(env.MOIRAI_DEV_STORAGE ? { devStorageDir: env.MOIRAI_DEV_STORAGE } : {}),
   };
 }

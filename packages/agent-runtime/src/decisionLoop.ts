@@ -14,7 +14,20 @@ import type { SkillSet } from "./skillSet.js";
 import type { ActivityQueue } from "./activityQueue.js";
 
 type TeachPayload = { kind: "TEACH"; skillId: string; abstract: string };
-type DeathWarningPayload = { kind: "DEATH_WARNING"; cause: string; activeCrises: unknown[] };
+type DeathWarningPayload = {
+  kind: "DEATH_WARNING";
+  cause: string;
+  activeCrises: { type: string; description: string; id: string }[];
+  lastAttempt?: { skillName: string; skillEffect: string };
+};
+
+export type CautionEntry = {
+  crisisType: string;
+  crisisDescription: string;
+  cause: string;
+  lastAttempt?: { skillName: string; skillEffect: string } | undefined;
+  tick: number;
+};
 
 export type DecisionDeps = {
   agentId: string;
@@ -24,6 +37,7 @@ export type DecisionDeps = {
   skills: SkillSet;
   knownPeerIds: string[];
   activityQueue: ActivityQueue;
+  cautionList: CautionEntry[];
 };
 
 export function isTeachPayload(x: unknown): x is TeachPayload {
@@ -32,14 +46,6 @@ export function isTeachPayload(x: unknown): x is TeachPayload {
 
 function isDeathWarning(x: unknown): x is DeathWarningPayload {
   return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "DEATH_WARNING";
-}
-
-// How much a skill's content aligns with this agent's personality traits (0..0.1)
-function traitAlignment(skill: Skill, traits: string[]): number {
-  if (traits.length === 0) return 0;
-  const skillText = `${skill.name} ${skill.effect} ${skill.description}`.toLowerCase();
-  const matches = traits.filter((t) => skillText.includes(t.toLowerCase())).length;
-  return (matches / traits.length) * 0.1;
 }
 
 // True if we already have a skill that covers the same ground at equal or better quality
@@ -73,7 +79,7 @@ async function broadcastSkill(deps: DecisionDeps, tick: number, skill: Skill): P
 }
 
 export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWorld, nearby: AgentInWorld[]): Promise<void> {
-  const { agentId, activityQueue, personality, environment, kernel, skills } = deps;
+  const { agentId, activityQueue, personality, environment, kernel, skills, cautionList } = deps;
 
   const current = activityQueue.tick(tick);
   if (current) {
@@ -84,6 +90,13 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
   const needsSummary = `hunger=${me.needs.hunger}/100 energy=${me.needs.energy}/100 curiosity=${me.needs.curiosity}/100 food_stock=${me.food}`;
   const skillList = skills.all().map((s) => `- ${s.name}: ${s.effect} (used ${s.useCount ?? 0}x)`).join("\n") || "(none)";
   const nearbyList = nearby.map((a) => a.id).join(", ") || "nobody";
+  const uniqueCautions = [...new Map(cautionList.map((c) => [c.crisisType, c])).values()];
+  const cautionContext = uniqueCautions.length > 0
+    ? `WARNINGS from community deaths:\n${uniqueCautions.map((c) => {
+        const attempt = c.lastAttempt ? ` They tried "${c.lastAttempt.skillName}" (${c.lastAttempt.skillEffect}) — it failed.` : "";
+        return `- ${c.crisisType}: ${c.crisisDescription}. Cause of death: ${c.cause}.${attempt}`;
+      }).join("\n")}`
+    : "";
 
   const reasonPrompt = [
     `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
@@ -93,16 +106,19 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     `Resources available: ${environment.resources.join(", ")}`,
     `Known skills:\n${skillList}`,
     `Nearby agents: ${nearbyList}`,
+    cautionContext,
     `Tick: ${tick}`,
     `Decide ONE action to address your most pressing need. Reply ONLY with JSON: { "action": "short phrase", "reason": "one sentence" }`,
     `Examples: { "action": "find berries to eat" } or { "action": "rest and recover energy" } or { "action": "experiment with grass bundles" }`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   let intendedAction: string;
   try {
     const resp = await kernel.compute.infer(reasonPrompt, { verifiable: false });
     const json = extractJson(resp.text);
-    intendedAction = (JSON.parse(json) as { action: string }).action;
+    const parsed = JSON.parse(json) as { action?: unknown };
+    const action = typeof parsed.action === "string" ? parsed.action.trim() : "";
+    intendedAction = action.length > 0 ? action : me.needs.hunger > 50 ? "find food" : "rest";
   } catch {
     intendedAction = me.needs.hunger > 50 ? "find food" : "rest";
   }
@@ -157,7 +173,7 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
 }
 
 export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Crisis): Promise<void> {
-  const { kernel, environment, skills, agentId, activityQueue } = deps;
+  const { kernel, environment, skills, agentId, activityQueue, cautionList } = deps;
 
   const interrupted = activityQueue.interrupt();
   if (interrupted) {
@@ -180,9 +196,14 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
     }
   }
 
+  const caution = cautionList.find((c) => c.crisisType.toLowerCase() === crisis.type.toLowerCase());
+  const cautionSuffix = caution
+    ? ` NOTE: a community member died facing this — they tried "${caution.lastAttempt?.skillName ?? "unknown"}" and it failed. Find a different approach.`
+    : "";
+
   const result = await kernel.evolve({
     tick,
-    situation: `${crisis.type} — ${crisis.description}`,
+    situation: `${crisis.type} — ${crisis.description}${cautionSuffix}`,
     crisis,
     inventory: [],
     knownSkills: skills.all(),
@@ -209,15 +230,49 @@ export async function handlePeerMessage(
   const { agentId, personality, kernel, skills } = deps;
 
   if (isDeathWarning(msg.payload)) {
+    const { cause, activeCrises, lastAttempt } = msg.payload;
+
+    for (const crisis of activeCrises) {
+      deps.cautionList.push({ crisisType: crisis.type, crisisDescription: crisis.description, cause, lastAttempt, tick });
+    }
+
     sendToEngine({
       kind: "EVENT",
       event: {
         type: EventType.DEATH_WARNING,
         tick,
         actorId: agentId,
-        payload: { from: msg.from, cause: msg.payload.cause, activeCrises: msg.payload.activeCrises },
+        payload: { from: msg.from, cause, activeCrises, lastAttempt },
       },
     });
+
+    // Proactive evolve: if we have no skill for a crisis our community member just died from, start thinking now
+    for (const crisis of activeCrises) {
+      const hasCrisisSkill = deps.skills.all().some((s) =>
+        skillResolvesCrisis(s, crisis as Crisis, deps.environment),
+      );
+      if (!hasCrisisSkill) {
+        const attemptContext = lastAttempt
+          ? ` They tried "${lastAttempt.skillName}" (${lastAttempt.skillEffect}) but it wasn't enough.`
+          : "";
+        void deps.kernel.evolve({
+          tick,
+          situation: `prepare for ${crisis.type} — a community member just died from it.${attemptContext} Find a better approach.`,
+          crisis: crisis as Crisis,
+          inventory: [],
+          knownSkills: deps.skills.all(),
+        }).then(async (result) => {
+          if (!result.accepted) return;
+          deps.skills.add(result.skill);
+          void deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
+          sendToEngine({
+            kind: "EVENT",
+            event: { type: EventType.SKILL_ACCEPTED, tick, actorId: deps.agentId, payload: { skillId: result.skill.id, skill: result.skill, triggeredBy: "death_warning" } },
+          });
+          await broadcastSkill(deps, tick, result.skill);
+        });
+      }
+    }
     return;
   }
 
@@ -247,22 +302,35 @@ export async function handlePeerMessage(
     return;
   }
 
-  // Acceptance score: base quality + trust bonus + trait alignment
-  const baseScore = skill.provenance.selfEvalScore;
-  const threshold = 0.6 - (personality.risk - 0.5) * 0.4;
+  // LLM-based acceptance: personality decides whether this skill fits who they are
   const community = await kernel.storage.getAgentSocialGraph(agentId);
-  const trustBonus = community.includes(msg.from) ? 0.1 : -0.1;
-  const traitBonus = traitAlignment(skill, personality.traits);
-  const effectiveScore = baseScore + trustBonus + traitBonus;
+  const inCommunity = community.includes(msg.from);
+  const acceptPrompt = [
+    `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
+    `${inCommunity ? "A trusted community member" : "A stranger"} is offering to teach you this skill:`,
+    `Skill: "${skill.name}" — ${skill.description}`,
+    `Effect: ${skill.effect}`,
+    `Quality score: ${skill.provenance.selfEvalScore.toFixed(2)}/1.0`,
+    `Given your personality and traits, would you adopt this skill? Reply ONLY with JSON: { "accept": boolean, "reason": "one sentence" }`,
+  ].join("\n");
 
-  if (effectiveScore < threshold) {
+  let accepted = false;
+  try {
+    const resp = await kernel.compute.infer(acceptPrompt, { verifiable: false });
+    const json = extractJson(resp.text);
+    accepted = (JSON.parse(json) as { accept: boolean }).accept;
+  } catch {
+    accepted = inCommunity;
+  }
+
+  if (!accepted) {
     sendToEngine({
       kind: "EVENT",
       event: {
         type: EventType.SKILL_REJECTED_BY_PEER,
         tick,
         actorId: agentId,
-        payload: { skillId, from: msg.from, reason: "below_threshold", score: effectiveScore, threshold },
+        payload: { skillId, from: msg.from, reason: "personality_mismatch", inCommunity },
       },
     });
     return;
@@ -293,7 +361,16 @@ export async function handlePeerMessage(
       type: EventType.SKILL_ACCEPTED_FROM_PEER,
       tick,
       actorId: agentId,
-      payload: { skillId, from: msg.from, score: effectiveScore, skill },
+      payload: { skillId, from: msg.from, skill },
+    },
+  });
+  sendToEngine({
+    kind: "EVENT",
+    event: {
+      type: EventType.SKILL_LEARNED,
+      tick,
+      actorId: agentId,
+      payload: { skillId, from: msg.from, skill },
     },
   });
 

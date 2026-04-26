@@ -2,7 +2,8 @@ import { loadEnvironment } from "@moirai/environment";
 import { loadPersonality } from "@moirai/personality";
 import type { Kernel, KernelConfig } from "@moirai/kernel";
 import { EventType, type DomainEvent, type EngineToAgentMessage, type Environment, type Personality } from "@moirai/shared";
-import { handleCrisis, handlePeerMessage, handleTick, inheritOnSpawn } from "./decisionLoop.js";
+import { inheritOnSpawn, type CautionEntry } from "./decisionLoop.js";
+import { EventQueue } from "./eventQueue.js";
 import { onEngineMessage, sendToEngine } from "./parentIpc.js";
 import { SkillSet } from "./skillSet.js";
 import { ActivityQueue } from "./activityQueue.js";
@@ -17,6 +18,7 @@ type AgentState = {
   skills: SkillSet;
   knownPeerIds: string[];
   activityQueue: ActivityQueue;
+  cautionList: CautionEntry[];
 };
 
 async function resolveCreateKernel(): Promise<CreateKernel> {
@@ -37,6 +39,7 @@ async function main(): Promise<void> {
 
   let state: AgentState | undefined;
   let initDone = false;
+  const queue = new EventQueue();
 
   sendToEngine({ kind: "READY", agentId });
 
@@ -71,11 +74,13 @@ async function main(): Promise<void> {
           skills,
           knownPeerIds: msg.peerIds,
           activityQueue,
+          cautionList: [],
         };
 
         kernel.net.subscribe(async (peerMsg) => {
           if (!state) return;
-          await handlePeerMessage(state, msg.tick, peerMsg);
+          queue.enqueue({ kind: "PEER_MESSAGE", tick: queue.currentTick, from: peerMsg.from, payload: peerMsg.payload });
+          await queue.drain(state);
         });
 
         // Report persisted social graph to engine so it can bootstrap its dispatch cache
@@ -98,13 +103,17 @@ async function main(): Promise<void> {
 
       case "TICK": {
         if (!state) return;
-        void handleTick(state, msg.tick, msg.me, msg.nearby);
+        queue.updateTick(msg.tick);
+        queue.enqueue({ kind: "TICK", tick: msg.tick, me: msg.me, nearby: msg.nearby });
+        await queue.drain(state);
         return;
       }
 
       case "CRISIS": {
         if (!state) return;
-        await handleCrisis(state, msg.tick, msg.crisis);
+        queue.updateTick(msg.tick);
+        queue.enqueue({ kind: "CRISIS", priority: 3, tick: msg.tick, crisis: msg.crisis });
+        await queue.drain(state);
         return;
       }
 

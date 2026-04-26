@@ -1,0 +1,13 @@
+Death warning — full story, load-bearing:
+  - Engine tracks lastSkillAttempt per agent, updated every APPLY_SKILL action
+  - Death warning payload now carries { cause, activeCrises, lastAttempt: { skillName, skillEffect } }
+  - Agent stores this in cautionList (ephemeral, in-memory)
+  - handleTick prompt includes: "WARNINGS from community deaths: - lion: a predator appeared. Cause: hunger. They tried 'throw rocks' (hits predator) — it failed."
+  - handleCrisis evolve situation appends the same caution when crisis type matches
+  - Proactive evolve fires immediately when a death warning arrives for a crisis type the agent has no skill for
+
+  Skill acceptance — LLM inference, not keyword matching:
+  - traitAlignment() removed entirely
+  - Each TEACH event triggers a cheap compute.infer() call (non-verifiable, background model)
+  - Prompt gives personality, traits, risk, community relationship, and the full skill — LLM decides semantically
+  - Fallback on parse failure: accept from community members, reject from strangers

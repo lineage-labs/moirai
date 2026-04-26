@@ -40,10 +40,11 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
     storage,
     net,
     async evolve(input: EvolveInput): Promise<EvolveResult> {
-      const { tick, situation, crisis, seedSkill, inventory, knownSkills } = input;
+      const { tick, crisis, seedSkill, inventory, knownSkills } = input;
+      const situation = input.situation ?? (crisis ? `${crisis.type}: ${crisis.description}` : "general survival planning");
       const { personality, environment, emit } = config;
 
-      emit({ type: EventType.REASONING_STARTED, payload: { situation: input.situation } });
+      emit({ type: EventType.REASONING_STARTED, payload: { situation } });
 
       const reasonPrompt = buildReasonPrompt({
         personality,

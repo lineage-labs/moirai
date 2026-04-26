@@ -40,6 +40,7 @@ export type EngineHandle = {
 };
 
 export async function bootEngine(config: EngineConfig = loadConfig()): Promise<EngineHandle> {
+  if (config.devStorageDir) process.env.MOIRAI_DEV_STORAGE = config.devStorageDir;
   const env = await loadEnvironment(config.environmentPath);
   const orchestrator = createCrisisOrchestrator(env);
   const world = createWorld();
@@ -59,6 +60,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const browser = new BrowserBridge(config.wsPort);
   const inheritorQueue = [...config.inheritorPool];
   const communityGraph = new Map<string, Set<string>>();
+  const lastSkillAttempt = new Map<string, { skillId: string; skillName: string; crisisId: string }>();
 
   function addCommunityBond(a: string, b: string): void {
     if (!communityGraph.has(a)) communityGraph.set(a, new Set());
@@ -141,16 +143,26 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         supervisor.send(a.id, { kind: "SHUTDOWN" });
 
         const activeCrisesForAgent = world.activeCrises.filter((c) => c.affectedAgents.includes(a.id));
+        const lastAttempt = lastSkillAttempt.get(a.id);
+        const lastAttemptSkill = lastAttempt ? skillCache.get(lastAttempt.skillId) : undefined;
         const members = communityGraph.get(a.id) ?? new Set<string>();
         for (const memberId of members) {
           if (world.agents[memberId]?.alive) {
             supervisor.send(memberId, {
               kind: "PEER_MESSAGE",
               from: a.id,
-              payload: { kind: "DEATH_WARNING", cause: forced ? "forced" : "hunger", activeCrises: activeCrisesForAgent },
+              payload: {
+                kind: "DEATH_WARNING",
+                cause: forced ? "forced" : "hunger",
+                activeCrises: activeCrisesForAgent,
+                lastAttempt: lastAttemptSkill
+                  ? { skillName: lastAttemptSkill.name, skillEffect: lastAttemptSkill.effect }
+                  : undefined,
+              },
             });
           }
         }
+        lastSkillAttempt.delete(a.id);
 
         const next = inheritorQueue.shift();
         if (next) void respawn(next);
@@ -232,6 +244,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       case "APPLY_SKILL": {
         const skill = skillCache.get(action.skillId);
         const crisis = world.activeCrises.find((c) => c.id === action.crisisId);
+        if (skill && crisis) lastSkillAttempt.set(agentId, { skillId: skill.id, skillName: skill.name, crisisId: crisis.id });
         if (!skill || !crisis) return;
         if (skillResolvesCrisis(skill, crisis, env)) {
           resolveCrisis(world, crisis.id);

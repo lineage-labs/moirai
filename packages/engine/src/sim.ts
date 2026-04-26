@@ -1,8 +1,12 @@
 import { EventType, type DomainEvent } from "@moirai/shared";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { bootEngine } from "./index.js";
 
 type SimMode = "compact" | "verbose";
+type SimStart = "fresh" | "resume";
 type DemoPhase = "village" | "crisis" | "evolution" | "teaching" | "inheritance";
 type Scoreboard = {
   events: number;
@@ -17,8 +21,17 @@ type Scoreboard = {
   spawns: number;
 };
 
+type LiveWorld = {
+  alive: Set<string>;
+  activeCrises: Set<string>;
+};
+
 function parseMode(argv: string[]): SimMode {
   return argv.includes("--verbose") ? "verbose" : "compact";
+}
+
+function parseStart(argv: string[]): SimStart {
+  return argv.includes("--resume") ? "resume" : "fresh";
 }
 
 function formatEvent(event: DomainEvent): string {
@@ -31,11 +44,11 @@ function formatEvent(event: DomainEvent): string {
     case EventType.REASONING_STARTED:
       return `reasoning started for crisis ${String(p.crisisId ?? "?")}`;
     case EventType.SKILL_PROPOSED:
-      return `proposed skill ${String(p.skillName ?? p.skillId ?? "?")}`;
+      return `proposed skill ${String(p.skillName ?? p.name ?? p.skillId ?? "?")}`;
     case EventType.SELF_EVAL_RESULT:
       return `self-eval score=${String(p.score ?? "?")} accepted=${String(p.accepted ?? "?")}`;
     case EventType.SKILL_ACCEPTED:
-      return `accepted skill ${String(p.skillName ?? p.skillId ?? "?")}`;
+      return `accepted skill ${String(p.skillName ?? p.name ?? p.skillId ?? "?")}`;
     case EventType.SKILL_LEARNED:
       return `learned skill ${String(p.skillId ?? "?")}`;
     case EventType.SKILL_INHERITED:
@@ -175,6 +188,44 @@ function printHeartbeat(tick: number, maxTicks: number): void {
   console.log(`[t=${String(tick).padStart(3, "0")}] progress [${bar}] ${pct}%`);
 }
 
+function nowStamp(): string {
+  return new Date().toISOString().slice(11, 19);
+}
+
+function elapsedSince(startMs: number): string {
+  const deltaSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  const mm = Math.floor(deltaSec / 60)
+    .toString()
+    .padStart(2, "0");
+  const ss = (deltaSec % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function updateLiveWorld(live: LiveWorld, event: DomainEvent): void {
+  const p = event.payload ?? {};
+  switch (event.type) {
+    case EventType.AGENT_SPAWNED:
+      live.alive.add(event.actorId);
+      break;
+    case EventType.AGENT_DIED:
+      live.alive.delete(event.actorId);
+      break;
+    case EventType.CRISIS_STARTED:
+      live.activeCrises.add(String(p.crisisId ?? "?"));
+      break;
+    case EventType.CRISIS_RESOLVED:
+      live.activeCrises.delete(String(p.crisisId ?? "?"));
+      break;
+  }
+}
+
+function printLiveWorld(live: LiveWorld): void {
+  const crises = [...live.activeCrises];
+  console.log(
+    `        world alive=${live.alive.size} crises=${crises.length}${crises.length > 0 ? ` [${crises.join(", ")}]` : ""}`,
+  );
+}
+
 function printRecap(board: Scoreboard, tick: number): void {
   console.log("\n==================== DEMO RECAP ====================");
   console.log(` ticks reached         : ${tick}`);
@@ -189,10 +240,17 @@ function printRecap(board: Scoreboard, tick: number): void {
 }
 
 async function main(): Promise<void> {
-  const mode = parseMode(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const mode = parseMode(argv);
+  const start = parseStart(argv);
+  const episodeDir = start === "fresh" ? mkdtempSync(join(tmpdir(), "moirai-sim-")) : process.env.MOIRAI_EPISODE_DIR;
+  const devStorageDir =
+    start === "fresh" ? mkdtempSync(join(tmpdir(), "moirai-dev-storage-sim-")) : process.env.MOIRAI_DEV_STORAGE;
   const config = loadConfig({
     ...process.env,
     MOIRAI_WS_PORT: process.env.MOIRAI_WS_PORT ?? "0",
+    ...(episodeDir ? { MOIRAI_EPISODE_DIR: episodeDir } : {}),
+    ...(devStorageDir ? { MOIRAI_DEV_STORAGE: devStorageDir } : {}),
   });
 
   printHeader(
@@ -202,20 +260,27 @@ async function main(): Promise<void> {
     config.tickIntervalMs,
     config.maxTicks,
   );
+  console.log(` start=${start} episodeDir=${config.episodePersistenceDir}`);
+  if (devStorageDir) console.log(` storage=${devStorageDir}`);
+  console.log("");
 
   const handle = await bootEngine(config);
   let tickCount = 0;
   let lastHeartbeat = -1;
   let phase: DemoPhase | undefined;
   const scoreboard = newScoreboard();
+  const live: LiveWorld = { alive: new Set(config.agents.map((a) => a.agentId)), activeCrises: new Set() };
+  const startMs = Date.now();
 
   handle.bus.subscribe((event) => {
     updateScoreboard(scoreboard, event);
+    updateLiveWorld(live, event);
 
     if (event.type === EventType.WORLD_TICK) {
       tickCount = event.tick;
       if (tickCount - lastHeartbeat >= 10 || tickCount === config.maxTicks) {
         printHeartbeat(tickCount, config.maxTicks);
+        printLiveWorld(live);
         lastHeartbeat = tickCount;
       }
       return;
@@ -228,7 +293,9 @@ async function main(): Promise<void> {
     }
 
     if (!shouldPrint(event, mode)) return;
-    console.log(`  [t=${String(event.tick).padStart(3, "0")}] ${event.actorId} :: ${formatEvent(event)}`);
+    console.log(
+      `  [${nowStamp()} +${elapsedSince(startMs)} t=${String(event.tick).padStart(3, "0")}] ${event.actorId} :: ${formatEvent(event)}`,
+    );
   });
 
   const stopOnce = async (): Promise<void> => {
