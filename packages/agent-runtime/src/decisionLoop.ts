@@ -14,6 +14,7 @@ import type { SkillSet } from "./skillSet.js";
 import type { ActivityQueue } from "./activityQueue.js";
 
 type TeachPayload = { kind: "TEACH"; skillId: string; abstract: string };
+type DeathWarningPayload = { kind: "DEATH_WARNING"; cause: string; activeCrises: unknown[] };
 
 export type DecisionDeps = {
   agentId: string;
@@ -29,6 +30,48 @@ export function isTeachPayload(x: unknown): x is TeachPayload {
   return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "TEACH";
 }
 
+function isDeathWarning(x: unknown): x is DeathWarningPayload {
+  return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "DEATH_WARNING";
+}
+
+// How much a skill's content aligns with this agent's personality traits (0..0.1)
+function traitAlignment(skill: Skill, traits: string[]): number {
+  if (traits.length === 0) return 0;
+  const skillText = `${skill.name} ${skill.effect} ${skill.description}`.toLowerCase();
+  const matches = traits.filter((t) => skillText.includes(t.toLowerCase())).length;
+  return (matches / traits.length) * 0.1;
+}
+
+// True if we already have a skill that covers the same ground at equal or better quality
+function hasBetterSkill(incoming: Skill, skills: SkillSet): boolean {
+  const incomingText = `${incoming.effect} ${incoming.description}`.toLowerCase();
+  const incomingWords = incomingText.split(/\s+/).filter((w) => w.length > 3);
+  if (incomingWords.length === 0) return false;
+  for (const s of skills.all()) {
+    const existingText = `${s.effect} ${s.description}`.toLowerCase();
+    const hits = incomingWords.filter((w) => existingText.includes(w)).length;
+    if (hits / incomingWords.length > 0.5 && s.provenance.selfEvalScore >= incoming.provenance.selfEvalScore) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Broadcast a newly accepted skill to all peers and emit SKILL_TAUGHT
+async function broadcastSkill(deps: DecisionDeps, tick: number, skill: Skill): Promise<void> {
+  const { kernel, agentId } = deps;
+  await kernel.net.broadcast({ kind: "TEACH", skillId: skill.id, abstract: skill.description } satisfies TeachPayload);
+  sendToEngine({
+    kind: "EVENT",
+    event: {
+      type: EventType.SKILL_TAUGHT,
+      tick,
+      actorId: agentId,
+      payload: { skillId: skill.id, to: "*", skill },
+    },
+  });
+}
+
 export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWorld, nearby: AgentInWorld[]): Promise<void> {
   const { agentId, activityQueue, personality, environment, kernel, skills } = deps;
 
@@ -38,10 +81,9 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     return;
   }
 
-  // Build reason prompt — kernel.compute owns the LLM call, agent-runtime owns the prompt
   const needsSummary = `hunger=${me.needs.hunger}/100 energy=${me.needs.energy}/100 curiosity=${me.needs.curiosity}/100 food_stock=${me.food}`;
-  const skillList = skills.all().map(s => `- ${s.name}: ${s.effect} (used ${s.useCount ?? 0}x)`).join("\n") || "(none)";
-  const nearbyList = nearby.map(a => a.id).join(", ") || "nobody";
+  const skillList = skills.all().map((s) => `- ${s.name}: ${s.effect} (used ${s.useCount ?? 0}x)`).join("\n") || "(none)";
+  const nearbyList = nearby.map((a) => a.id).join(", ") || "nobody";
 
   const reasonPrompt = [
     `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
@@ -65,11 +107,9 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     intendedAction = me.needs.hunger > 50 ? "find food" : "rest";
   }
 
-  // Find matching skill
-  const matchingSkill = skills.all().find(s => skillCoversActivity(s, intendedAction));
+  const matchingSkill = skills.all().find((s) => skillCoversActivity(s, intendedAction));
 
   if (matchingSkill) {
-    // Increment use count — skills grow through use
     const updated = { ...matchingSkill, useCount: (matchingSkill.useCount ?? 0) + 1 };
     skills.add(updated);
     void kernel.storage.putSkill(updated);
@@ -79,7 +119,7 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     sendToEngine({ kind: "EVENT", event: { type: EventType.ACTIVITY_STARTED, tick, actorId: agentId, payload: { activity: action.kind, skillId: matchingSkill.id } } });
     sendToEngine({ kind: "ACTION", action });
 
-    // Skill growth: re-evolve when well-used and curious
+    // Curiosity-driven growth: re-evolve a well-used skill
     const growthThreshold = 8;
     if (updated.useCount >= growthThreshold && me.needs.curiosity >= 65) {
       void kernel.evolve({
@@ -88,13 +128,12 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
         seedSkill: matchingSkill,
         inventory: me.inventory,
         knownSkills: skills.all(),
-      }).then(result => {
-        if (result.accepted) {
-          skills.add(result.skill);
-          // Teach the improvement to peers
-          const peer = deps.knownPeerIds.find(p => p !== agentId);
-          if (peer) void kernel.net.whisper(peer, { kind: "TEACH", skillId: result.skill.id, abstract: result.skill.description });
-        }
+      }).then(async (result) => {
+        if (!result.accepted) return;
+        skills.add(result.skill);
+        void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+        sendToEngine({ kind: "EVENT", event: { type: EventType.CURIOSITY_EVOLVED, tick, actorId: agentId, payload: { skillId: result.skill.id, inspiredBy: matchingSkill.id, skill: result.skill } } });
+        await broadcastSkill(deps, tick, result.skill);
       });
     }
     return;
@@ -106,19 +145,19 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     situation: intendedAction,
     inventory: me.inventory,
     knownSkills: skills.all(),
-  }).then(result => {
+  }).then(async (result) => {
     if (!result.accepted) return;
     skills.add(result.skill);
+    void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
     const action = activityFromSkill(result.skill);
     activityQueue.start(action, tick, durationForAction(action.kind));
     sendToEngine({ kind: "ACTION", action });
-    const peer = deps.knownPeerIds.find(p => p !== agentId);
-    if (peer) void kernel.net.whisper(peer, { kind: "TEACH", skillId: result.skill.id, abstract: result.skill.description });
+    await broadcastSkill(deps, tick, result.skill);
   });
 }
 
 export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Crisis): Promise<void> {
-  const { kernel, environment, skills, agentId, knownPeerIds, activityQueue } = deps;
+  const { kernel, environment, skills, agentId, activityQueue } = deps;
 
   const interrupted = activityQueue.interrupt();
   if (interrupted) {
@@ -135,10 +174,7 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
 
   for (const skill of skills.all()) {
     if (skillResolvesCrisis(skill, crisis, environment)) {
-      sendToEngine({
-        kind: "ACTION",
-        action: { kind: "APPLY_SKILL", skillId: skill.id, crisisId: crisis.id },
-      });
+      sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: skill.id, crisisId: crisis.id } });
       activityQueue.resume(tick);
       return;
     }
@@ -158,30 +194,10 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
   }
 
   skills.add(result.skill);
+  await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+  await broadcastSkill(deps, tick, result.skill);
 
-  const peer = pickPeerToTeach(knownPeerIds, agentId);
-  if (peer) {
-    await kernel.net.whisper(peer, {
-      kind: "TEACH",
-      skillId: result.skill.id,
-      abstract: result.skill.description,
-    } satisfies TeachPayload);
-
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.SKILL_TAUGHT,
-        tick,
-        actorId: agentId,
-        payload: { skillId: result.skill.id, to: peer, skill: result.skill },
-      },
-    });
-  }
-
-  sendToEngine({
-    kind: "ACTION",
-    action: { kind: "APPLY_SKILL", skillId: result.skill.id, crisisId: crisis.id },
-  });
+  sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: result.skill.id, crisisId: crisis.id } });
   activityQueue.resume(tick);
 }
 
@@ -190,45 +206,156 @@ export async function handlePeerMessage(
   tick: number,
   msg: { from: string; payload: unknown },
 ): Promise<void> {
+  const { agentId, personality, kernel, skills } = deps;
+
+  if (isDeathWarning(msg.payload)) {
+    sendToEngine({
+      kind: "EVENT",
+      event: {
+        type: EventType.DEATH_WARNING,
+        tick,
+        actorId: agentId,
+        payload: { from: msg.from, cause: msg.payload.cause, activeCrises: msg.payload.activeCrises },
+      },
+    });
+    return;
+  }
+
   if (!isTeachPayload(msg.payload)) return;
+
   const skillId = msg.payload.skillId;
-  if (deps.skills.has(skillId)) return;
+  if (skills.has(skillId)) return;
 
   let skill: Skill;
   try {
-    skill = await deps.kernel.storage.getSkill(skillId);
+    skill = await kernel.storage.getSkill(skillId);
   } catch {
     return;
   }
 
-  deps.skills.add(skill);
+  // Redundancy check — reject if we already have a better equivalent
+  if (hasBetterSkill(skill, skills)) {
+    sendToEngine({
+      kind: "EVENT",
+      event: {
+        type: EventType.SKILL_REJECTED_BY_PEER,
+        tick,
+        actorId: agentId,
+        payload: { skillId, from: msg.from, reason: "redundant" },
+      },
+    });
+    return;
+  }
+
+  // Acceptance score: base quality + trust bonus + trait alignment
+  const baseScore = skill.provenance.selfEvalScore;
+  const threshold = 0.6 - (personality.risk - 0.5) * 0.4;
+  const community = await kernel.storage.getAgentSocialGraph(agentId);
+  const trustBonus = community.includes(msg.from) ? 0.1 : -0.1;
+  const traitBonus = traitAlignment(skill, personality.traits);
+  const effectiveScore = baseScore + trustBonus + traitBonus;
+
+  if (effectiveScore < threshold) {
+    sendToEngine({
+      kind: "EVENT",
+      event: {
+        type: EventType.SKILL_REJECTED_BY_PEER,
+        tick,
+        actorId: agentId,
+        payload: { skillId, from: msg.from, reason: "below_threshold", score: effectiveScore, threshold },
+      },
+    });
+    return;
+  }
+
+  // Accept
+  skills.add(skill);
+  await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+
+  // Bond: add sender to our social graph if not already there
+  if (!community.includes(msg.from)) {
+    const updated = [...community, msg.from];
+    await kernel.storage.putAgentSocialGraph(agentId, updated);
+    sendToEngine({
+      kind: "EVENT",
+      event: {
+        type: EventType.SOCIAL_GRAPH_UPDATED,
+        tick,
+        actorId: agentId,
+        payload: { newMember: msg.from },
+      },
+    });
+  }
 
   sendToEngine({
     kind: "EVENT",
     event: {
-      type: EventType.SKILL_LEARNED,
+      type: EventType.SKILL_ACCEPTED_FROM_PEER,
       tick,
-      actorId: deps.agentId,
-      payload: { skillId, from: msg.from, skill },
+      actorId: agentId,
+      payload: { skillId, from: msg.from, score: effectiveScore, skill },
     },
   });
+
+  // Curiosity-driven discovery: curious agents try to improve on what they just learned
+  const isCurious = personality.traits.some((t) => t.toLowerCase().includes("curious"));
+  if (isCurious) {
+    void kernel.evolve({
+      tick,
+      situation: `explore what's possible beyond ${skill.name}`,
+      seedSkill: skill,
+      inventory: [],
+      knownSkills: skills.all(),
+    }).then(async (result) => {
+      if (!result.accepted) return;
+      skills.add(result.skill);
+      void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+      sendToEngine({
+        kind: "EVENT",
+        event: {
+          type: EventType.CURIOSITY_EVOLVED,
+          tick,
+          actorId: agentId,
+          payload: { skillId: result.skill.id, inspiredBy: skill.id, skill: result.skill },
+        },
+      });
+      await broadcastSkill(deps, tick, result.skill);
+    });
+  }
 }
 
-export async function inheritOnSpawn(deps: DecisionDeps, tick: number): Promise<void> {
-  const list = await deps.kernel.storage.listSkills();
-  for (const skill of list) {
-    if (deps.personality.innateSkills.includes(skill.id)) continue;
-    if (deps.skills.has(skill.id)) continue;
-    deps.skills.add(skill);
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.SKILL_INHERITED,
-        tick,
-        actorId: deps.agentId,
-        payload: { skillId: skill.id, skill, from: skill.provenance.inventedBy },
-      },
-    });
+export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecessorIds?: string[]): Promise<void> {
+  if (!predecessorIds || predecessorIds.length === 0) return;
+
+  const seen = new Set<string>();
+  for (const predecessorId of predecessorIds) {
+    const ids = await deps.kernel.storage.getAgentInventory(predecessorId);
+    for (const skillId of ids) {
+      if (seen.has(skillId)) continue;
+      seen.add(skillId);
+      if (deps.personality.innateSkills.includes(skillId)) continue;
+      if (deps.skills.has(skillId)) continue;
+      let skill: Skill;
+      try {
+        skill = await deps.kernel.storage.getSkill(skillId);
+      } catch {
+        continue;
+      }
+      deps.skills.add(skill);
+      sendToEngine({
+        kind: "EVENT",
+        event: {
+          type: EventType.SKILL_INHERITED,
+          tick,
+          actorId: deps.agentId,
+          payload: { skillId: skill.id, skill, from: skill.provenance.inventedBy },
+        },
+      });
+    }
+  }
+
+  if (seen.size > 0) {
+    await deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
   }
 }
 
@@ -237,7 +364,7 @@ function activityFromSkill(skill: Skill): AgentAction {
   if (/rest|sleep|recover|energy/.test(text)) return { kind: "REST" };
   if (/forag|berr|gather|hunt|collect/.test(text)) return { kind: "FORAGE" };
   if (/farm|grow|plant|cultivat|grass/.test(text)) return { kind: "FARM" };
-  if (/talk|social|communicat|chat/.test(text)) return { kind: "SOCIALIZE", targetId: "" }; // engine ignores empty targetId
+  if (/talk|social|communicat|chat/.test(text)) return { kind: "SOCIALIZE", targetId: "" };
   return { kind: "EXPERIMENT" };
 }
 
@@ -254,10 +381,4 @@ function extractJson(text: string): string {
   const end = text.lastIndexOf("}");
   if (start < 0 || end < 0) throw new Error("no JSON");
   return text.slice(start, end + 1);
-}
-
-function pickPeerToTeach(peers: string[], me: string): string | undefined {
-  const candidates = peers.filter((p) => p !== me);
-  if (candidates.length === 0) return undefined;
-  return candidates[Math.floor(Math.random() * candidates.length)];
 }

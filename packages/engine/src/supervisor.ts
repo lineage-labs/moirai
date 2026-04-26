@@ -18,6 +18,7 @@ export type SpawnOpts = {
   environmentPath: string;
   initialPeerIds: string[];
   tick: number;
+  predecessorIds?: string[];
 };
 
 export type AgentMessageHandler = (agentId: string, msg: AgentToEngineMessage) => void;
@@ -64,14 +65,16 @@ export class Supervisor {
       },
     };
 
-    handle.send({
-      kind: "INIT",
+    const initMsg = {
+      kind: "INIT" as const,
       agentId: opts.agentId,
       personalityPath: opts.personalityPath,
       environmentPath: opts.environmentPath,
       peerIds: opts.initialPeerIds,
       tick: opts.tick,
-    });
+      ...(opts.predecessorIds ? { predecessorIds: opts.predecessorIds } : {}),
+    };
+    handle.send(initMsg);
 
     return handle;
   }

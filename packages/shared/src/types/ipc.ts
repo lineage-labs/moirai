@@ -3,7 +3,7 @@ import type { DomainEvent } from "./event.js";
 import type { AgentInWorld } from "./world.js";
 
 export type EngineToAgentMessage =
-  | { kind: "INIT"; agentId: string; personalityPath: string; environmentPath: string; peerIds: string[]; tick: number }
+  | { kind: "INIT"; agentId: string; personalityPath: string; environmentPath: string; peerIds: string[]; tick: number; predecessorIds?: string[] }
   | { kind: "TICK"; tick: number; me: AgentInWorld; nearby: AgentInWorld[] }
   | { kind: "CRISIS"; tick: number; crisis: Crisis }
   | { kind: "PEER_MESSAGE"; from: string; payload: unknown }

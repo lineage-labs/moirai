@@ -11,6 +11,8 @@ import type { IStorageAdapter } from "@moirai/kernel";
 const SHARED_DIR = process.env.MOIRAI_DEV_STORAGE ?? join(tmpdir(), "moirai-dev");
 const SKILLS_FILE = join(SHARED_DIR, "skills.json");
 const EVENTS_FILE = join(SHARED_DIR, "events.json");
+const INVENTORIES_FILE = join(SHARED_DIR, "inventories.json");
+const SOCIAL_GRAPH_FILE = join(SHARED_DIR, "socialGraph.json");
 
 async function readArray<T>(path: string): Promise<T[]> {
   try {
@@ -27,6 +29,24 @@ async function writeArrayAtomic<T>(path: string, items: T[]): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   await writeFile(tmp, JSON.stringify(items, null, 2));
+  await rename(tmp, path);
+}
+
+async function readObject<T extends Record<string, unknown>>(path: string): Promise<T> {
+  try {
+    const raw = await readFile(path, "utf8");
+    if (!raw.trim()) return {} as T;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return {} as T;
+    throw e;
+  }
+}
+
+async function writeObjectAtomic<T>(path: string, obj: T): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
+  await writeFile(tmp, JSON.stringify(obj, null, 2));
   await rename(tmp, path);
 }
 
@@ -81,6 +101,32 @@ export class DevStorageAdapter implements IStorageAdapter {
     return skills.filter((s) => s.provenance.selfEvalScore >= filter.minScore!);
   }
 
+  async putAgentInventory(agentId: string, skillIds: string[]): Promise<void> {
+    await withLock(INVENTORIES_FILE, async () => {
+      const map = await readObject<Record<string, string[]>>(INVENTORIES_FILE);
+      map[agentId] = skillIds;
+      await writeObjectAtomic(INVENTORIES_FILE, map);
+    });
+  }
+
+  async getAgentInventory(agentId: string): Promise<string[]> {
+    const map = await withLock(INVENTORIES_FILE, () => readObject<Record<string, string[]>>(INVENTORIES_FILE));
+    return map[agentId] ?? [];
+  }
+
+  async putAgentSocialGraph(agentId: string, memberIds: string[]): Promise<void> {
+    await withLock(SOCIAL_GRAPH_FILE, async () => {
+      const map = await readObject<Record<string, string[]>>(SOCIAL_GRAPH_FILE);
+      map[agentId] = [...new Set(memberIds)];
+      await writeObjectAtomic(SOCIAL_GRAPH_FILE, map);
+    });
+  }
+
+  async getAgentSocialGraph(agentId: string): Promise<string[]> {
+    const map = await withLock(SOCIAL_GRAPH_FILE, () => readObject<Record<string, string[]>>(SOCIAL_GRAPH_FILE));
+    return map[agentId] ?? [];
+  }
+
   async appendEvent(event: DomainEvent): Promise<{ eventId: string }> {
     await mkdir(SHARED_DIR, { recursive: true });
     let eventId = "";
@@ -98,4 +144,6 @@ export async function clearDevStorage(): Promise<void> {
   await mkdir(SHARED_DIR, { recursive: true });
   await writeArrayAtomic(SKILLS_FILE, []);
   await writeArrayAtomic(EVENTS_FILE, []);
+  await writeObjectAtomic(INVENTORIES_FILE, {});
+  await writeObjectAtomic(SOCIAL_GRAPH_FILE, {});
 }

@@ -22,6 +22,10 @@ export interface IStorageAdapter {
   getSkill(rootHash: string): Promise<Skill>;
   listSkills(filter?: { minScore?: number }): Promise<Skill[]>;
   appendEvent(event: DomainEvent): Promise<{ eventId: string }>;
+  putAgentInventory(agentId: string, skillIds: string[]): Promise<void>;
+  getAgentInventory(agentId: string): Promise<string[]>;
+  putAgentSocialGraph(agentId: string, memberIds: string[]): Promise<void>;
+  getAgentSocialGraph(agentId: string): Promise<string[]>;
 }
 
 export type PeerMessageHandler = (msg: { from: string; payload: unknown }) => void | Promise<void>;

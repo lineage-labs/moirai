@@ -58,6 +58,14 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const skillCache = new SkillCache();
   const browser = new BrowserBridge(config.wsPort);
   const inheritorQueue = [...config.inheritorPool];
+  const communityGraph = new Map<string, Set<string>>();
+
+  function addCommunityBond(a: string, b: string): void {
+    if (!communityGraph.has(a)) communityGraph.set(a, new Set());
+    if (!communityGraph.has(b)) communityGraph.set(b, new Set());
+    communityGraph.get(a)!.add(b);
+    communityGraph.get(b)!.add(a);
+  }
 
   bus.subscribe((event) => browser.send({ kind: "EVENT", event }));
 
@@ -132,6 +140,18 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         );
         supervisor.send(a.id, { kind: "SHUTDOWN" });
 
+        const activeCrisesForAgent = world.activeCrises.filter((c) => c.affectedAgents.includes(a.id));
+        const members = communityGraph.get(a.id) ?? new Set<string>();
+        for (const memberId of members) {
+          if (world.agents[memberId]?.alive) {
+            supervisor.send(memberId, {
+              kind: "PEER_MESSAGE",
+              from: a.id,
+              payload: { kind: "DEATH_WARNING", cause: forced ? "forced" : "hunger", activeCrises: activeCrisesForAgent },
+            });
+          }
+        }
+
         const next = inheritorQueue.shift();
         if (next) void respawn(next);
       } else {
@@ -149,13 +169,15 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
     const p = await loadPersonality(personalityPath);
     const agentId = p.id;
     spawnAgent(world, agentId, p.id);
-    bus.emit(domainEvent(EventType.AGENT_SPAWNED, world.tick, agentId, { personalityId: p.id, fresh: true }));
+    const predecessorIds = nearbyAgents(world, agentId).map((a) => a.id);
+    bus.emit(domainEvent(EventType.AGENT_SPAWNED, world.tick, agentId, { personalityId: p.id, fresh: true, inheritedFrom: predecessorIds }));
     const handle = supervisor.spawn({
       agentId,
       personalityPath,
       environmentPath: config.environmentPath,
       initialPeerIds: Object.keys(world.agents).filter((id) => id !== agentId && world.agents[id]?.alive),
       tick: world.tick,
+      predecessorIds,
     });
     peerRouter.register(agentId, handle.send);
   }
@@ -167,8 +189,14 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
 
       case "EVENT": {
         const enriched: DomainEvent = { ...msg.event, tick: world.tick, actorId: agentId };
-        const payload = enriched.payload as { skill?: Skill };
+        const payload = enriched.payload as { skill?: Skill; members?: string[]; newMember?: string };
         if (payload.skill && payload.skill.id) skillCache.register(payload.skill);
+        if (enriched.type === EventType.SOCIAL_GRAPH_LOADED && payload.members) {
+          for (const memberId of payload.members) addCommunityBond(agentId, memberId);
+        }
+        if (enriched.type === EventType.SOCIAL_GRAPH_UPDATED && payload.newMember) {
+          addCommunityBond(agentId, payload.newMember);
+        }
         bus.emit(enriched);
         return;
       }

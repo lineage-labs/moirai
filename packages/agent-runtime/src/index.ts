@@ -1,7 +1,7 @@
 import { loadEnvironment } from "@moirai/environment";
 import { loadPersonality } from "@moirai/personality";
 import type { Kernel, KernelConfig } from "@moirai/kernel";
-import type { DomainEvent, EngineToAgentMessage, Environment, Personality } from "@moirai/shared";
+import { EventType, type DomainEvent, type EngineToAgentMessage, type Environment, type Personality } from "@moirai/shared";
 import { handleCrisis, handlePeerMessage, handleTick, inheritOnSpawn } from "./decisionLoop.js";
 import { onEngineMessage, sendToEngine } from "./parentIpc.js";
 import { SkillSet } from "./skillSet.js";
@@ -78,7 +78,21 @@ async function main(): Promise<void> {
           await handlePeerMessage(state, msg.tick, peerMsg);
         });
 
-        await inheritOnSpawn(state, msg.tick);
+        // Report persisted social graph to engine so it can bootstrap its dispatch cache
+        const community = await kernel.storage.getAgentSocialGraph(msg.agentId);
+        if (community.length > 0) {
+          sendToEngine({
+            kind: "EVENT",
+            event: {
+              type: EventType.SOCIAL_GRAPH_LOADED,
+              tick: msg.tick,
+              actorId: msg.agentId,
+              payload: { members: community },
+            },
+          });
+        }
+
+        await inheritOnSpawn(state, msg.tick, msg.predecessorIds);
         return;
       }
 
