@@ -18,7 +18,6 @@ import { Supervisor } from "./supervisor.js";
 import { BrowserBridge } from "./wsServer.js";
 import { loadLatestEpisode, nextEpisodeId, saveEpisode, type EpisodeSnapshot } from "./episodePersistence.js";
 import {
-  applyExperimentEffect,
   applyRestEffect,
   createWorld,
   decayAgentNeeds,
@@ -59,17 +58,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const skillCache = new SkillCache();
   const browser = new BrowserBridge(config.wsPort);
   const inheritorQueue = [...config.inheritorPool];
-  const communityGraph = new Map<string, Set<string>>();
-  const lastSkillAttempt = new Map<string, { skillId: string; skillName: string; crisisId: string }>();
-  const discoveredRules = new Map<string, Set<string>>(); // agentId → ruleIds already surfaced
   const evolvingAgents = new Set<string>(); // agents with a pending 0G compute call — immune to hunger death
-
-  function addCommunityBond(a: string, b: string): void {
-    if (!communityGraph.has(a)) communityGraph.set(a, new Set());
-    if (!communityGraph.has(b)) communityGraph.set(b, new Set());
-    communityGraph.get(a)!.add(b);
-    communityGraph.get(b)!.add(a);
-  }
 
   bus.subscribe((event) => browser.send({ kind: "EVENT", event }));
 
@@ -146,27 +135,18 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         );
         supervisor.send(a.id, { kind: "SHUTDOWN" });
 
-        const activeCrisesForAgent = world.activeCrises.filter((c) => c.affectedAgents.includes(a.id));
-        const lastAttempt = lastSkillAttempt.get(a.id);
-        const lastAttemptSkill = lastAttempt ? skillCache.get(lastAttempt.skillId) : undefined;
-        const members = communityGraph.get(a.id) ?? new Set<string>();
-        for (const memberId of members) {
-          if (world.agents[memberId]?.alive) {
-            supervisor.send(memberId, {
-              kind: "PEER_MESSAGE",
-              from: a.id,
-              payload: {
-                kind: "DEATH_WARNING",
-                cause: forced ? "forced" : "hunger",
-                activeCrises: activeCrisesForAgent,
-                lastAttempt: lastAttemptSkill
-                  ? { skillName: lastAttemptSkill.name, skillEffect: lastAttemptSkill.effect }
-                  : undefined,
-              },
-            });
+        // Warn all alive peers about which crises this agent faced when it died
+        for (const crisis of world.activeCrises.filter((c) => c.affectedAgents.includes(a.id))) {
+          for (const [peerId, peer] of Object.entries(world.agents)) {
+            if (peerId !== a.id && peer.alive) {
+              supervisor.send(peerId, {
+                kind: "PEER_MESSAGE",
+                from: a.id,
+                payload: { kind: "DEATH_WARNING", crisisType: crisis.type, crisisDescription: crisis.description },
+              });
+            }
           }
         }
-        lastSkillAttempt.delete(a.id);
         evolvingAgents.delete(a.id);
         diedThisTick.push(a.id);
       } else {
@@ -209,14 +189,8 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
 
       case "EVENT": {
         const enriched: DomainEvent = { ...msg.event, tick: world.tick, actorId: agentId };
-        const payload = enriched.payload as { skill?: Skill; members?: string[]; newMember?: string };
+        const payload = enriched.payload as { skill?: Skill };
         if (payload.skill && payload.skill.id) skillCache.register(payload.skill);
-        if (enriched.type === EventType.SOCIAL_GRAPH_LOADED && payload.members) {
-          for (const memberId of payload.members) addCommunityBond(agentId, memberId);
-        }
-        if (enriched.type === EventType.SOCIAL_GRAPH_UPDATED && payload.newMember) {
-          addCommunityBond(agentId, payload.newMember);
-        }
         if (enriched.type === EventType.REASONING_STARTED) evolvingAgents.add(agentId);
         if (enriched.type === EventType.SKILL_ACCEPTED || enriched.type === EventType.SKILL_REJECTED) evolvingAgents.delete(agentId);
         bus.emit(enriched);
@@ -254,7 +228,6 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       case "APPLY_SKILL": {
         const skill = skillCache.get(action.skillId);
         const crisis = world.activeCrises.find((c) => c.id === action.crisisId);
-        if (skill && crisis) lastSkillAttempt.set(agentId, { skillId: skill.id, skillName: skill.name, crisisId: crisis.id });
         if (!skill || !crisis) return;
         if (skillResolvesCrisis(skill, crisis, env)) {
           resolveCrisis(world, crisis.id);
@@ -270,41 +243,20 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         return;
       }
       case "FORAGE": {
-        const multiplier = world.tick % 20 === 0 ? (env.hiddenRules?.find(r => r.id === "dawn-forage")?.multiplier ?? 1) : 1;
-        const yield_ = forageFood(world, agentId, multiplier);
+        const yield_ = forageFood(world, agentId);
         bus.emit(domainEvent(EventType.FOOD_GATHERED, world.tick, agentId, { method: "FORAGE", yield: yield_ }));
-        if (multiplier > 1 && !discoveredRules.get(agentId)?.has("dawn-forage")) {
-          if (!discoveredRules.has(agentId)) discoveredRules.set(agentId, new Set());
-          discoveredRules.get(agentId)!.add("dawn-forage");
-          bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "dawn-forage", effect: "Foraging at dawn yields double berries" }));
-        }
         return;
       }
       case "FARM": {
-        const farmingAgents = Object.values(world.agents).filter(ag => ag.alive && ag.id !== agentId).length;
-        const multiplier = farmingAgents >= 2 ? (env.hiddenRules?.find(r => r.id === "group-farm")?.multiplier ?? 1) : 1;
-        const yield_ = farmFood(world, agentId, multiplier);
+        const yield_ = farmFood(world, agentId);
         bus.emit(domainEvent(EventType.FOOD_GATHERED, world.tick, agentId, { method: "FARM", yield: yield_ }));
-        if (multiplier > 1 && !discoveredRules.get(agentId)?.has("group-farm")) {
-          if (!discoveredRules.has(agentId)) discoveredRules.set(agentId, new Set());
-          discoveredRules.get(agentId)!.add("group-farm");
-          bus.emit(domainEvent(EventType.HIDDEN_RULE_DISCOVERED, world.tick, agentId, { ruleId: "group-farm", effect: "Collaborative farming yields triple food" }));
-        }
         return;
       }
       case "REST":
         applyRestEffect(world, agentId);
         return;
-      case "SOCIALIZE": {
-        const target = world.agents[action.targetId];
-        if (target?.alive) {
-          world.agents[agentId]!.needs.curiosity = Math.min(100, world.agents[agentId]!.needs.curiosity + 5);
-          target.needs.curiosity = Math.min(100, target.needs.curiosity + 5);
-        }
-        return;
-      }
+      case "SOCIALIZE":
       case "EXPERIMENT":
-        applyExperimentEffect(world, agentId);
         return;
     }
   }

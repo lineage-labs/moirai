@@ -1,46 +1,26 @@
-import { skillResolvesCrisis, skillCoversActivity } from "@moirai/environment";
+import { skillResolvesCrisis } from "@moirai/environment";
 import type { Kernel } from "@moirai/kernel";
 import {
   EventType,
-  type AgentAction,
   type AgentInWorld,
   type Crisis,
   type Environment,
-  type Personality,
-  type Skill,
 } from "@moirai/shared";
 import { sendToEngine } from "./parentIpc.js";
 import type { SkillSet } from "./skillSet.js";
-import type { ActivityQueue } from "./activityQueue.js";
 
-type TeachPayload = { kind: "TEACH"; skillId: string; abstract: string };
-type DeathWarningPayload = {
-  kind: "DEATH_WARNING";
-  cause: string;
-  activeCrises: { type: string; description: string; id: string }[];
-  lastAttempt?: { skillName: string; skillEffect: string };
-};
-
-export type CautionEntry = {
-  crisisType: string;
-  crisisDescription: string;
-  cause: string;
-  lastAttempt?: { skillName: string; skillEffect: string } | undefined;
-  tick: number;
-};
+type TeachPayload = { kind: "TEACH"; skillId: string };
+type DeathWarningPayload = { kind: "DEATH_WARNING"; crisisType: string; crisisDescription: string };
 
 export type DecisionDeps = {
   agentId: string;
-  personality: Personality;
   environment: Environment;
   kernel: Kernel;
   skills: SkillSet;
-  knownPeerIds: string[];
-  activityQueue: ActivityQueue;
-  cautionList: CautionEntry[];
+  crisisCautions: Map<string, string>; // crisisType → caution note injected into evolve prompt
 };
 
-export function isTeachPayload(x: unknown): x is TeachPayload {
+function isTeachPayload(x: unknown): x is TeachPayload {
   return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "TEACH";
 }
 
@@ -48,124 +28,47 @@ function isDeathWarning(x: unknown): x is DeathWarningPayload {
   return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "DEATH_WARNING";
 }
 
-// True if we already have a skill that covers the same ground at equal or better quality
-function hasBetterSkill(incoming: Skill, skills: SkillSet): boolean {
-  const incomingText = `${incoming.effect} ${incoming.description}`.toLowerCase();
-  const incomingWords = incomingText.split(/\s+/).filter((w) => w.length > 3);
-  if (incomingWords.length === 0) return false;
-  for (const s of skills.all()) {
-    const existingText = `${s.effect} ${s.description}`.toLowerCase();
-    const hits = incomingWords.filter((w) => existingText.includes(w)).length;
-    if (hits / incomingWords.length > 0.5 && s.provenance.selfEvalScore >= incoming.provenance.selfEvalScore) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Broadcast a newly accepted skill to all peers and emit SKILL_TAUGHT
-async function broadcastSkill(deps: DecisionDeps, tick: number, skill: Skill): Promise<void> {
-  const { kernel, agentId } = deps;
-  await kernel.net.broadcast({ kind: "TEACH", skillId: skill.id, abstract: skill.description } satisfies TeachPayload);
-  sendToEngine({
-    kind: "EVENT",
-    event: {
-      type: EventType.SKILL_TAUGHT,
-      tick,
-      actorId: agentId,
-      payload: { skillId: skill.id, to: "*", skill },
-    },
-  });
-}
-
-export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWorld, nearby: AgentInWorld[]): Promise<void> {
-  const { agentId, activityQueue, kernel, skills } = deps;
-
-  // Continue queued multi-tick activity
-  const current = activityQueue.tick(tick);
-  if (current) {
-    sendToEngine({ kind: "ACTION", action: current });
-    return;
-  }
-
-  // Need-based situation label — pure heuristic, no LLM blocking call
-  let situation: string;
-  if (me.food <= 15 || me.needs.hunger >= 50) {
-    situation = "find food to survive hunger";
-  } else if (me.needs.energy <= 25) {
-    situation = "rest and recover energy";
-  } else if (me.needs.curiosity >= 75) {
-    situation = "experiment and discover something new";
+export function handleTick(_deps: DecisionDeps, _tick: number, me: AgentInWorld, _nearby: AgentInWorld[]): void {
+  if (me.food <= 20 || me.needs.hunger >= 50) {
+    sendToEngine({ kind: "ACTION", action: { kind: "FORAGE" } });
   } else {
-    situation = "explore the environment";
+    sendToEngine({ kind: "ACTION", action: { kind: "MOVE", dx: (Math.random() - 0.5) * 20, dy: (Math.random() - 0.5) * 20 } });
   }
-
-  // Check existing skills for this need
-  const matchingSkill = skills.all().find((s) => skillCoversActivity(s, situation));
-
-  if (matchingSkill) {
-    const updated = { ...matchingSkill, useCount: (matchingSkill.useCount ?? 0) + 1 };
-    skills.add(updated);
-    void kernel.storage.putSkill(updated);
-
-    const action = activityFromSkill(matchingSkill);
-    activityQueue.start(action, tick, durationForAction(action.kind));
-    sendToEngine({ kind: "EVENT", event: { type: EventType.ACTIVITY_STARTED, tick, actorId: agentId, payload: { activity: action.kind, skillId: matchingSkill.id } } });
-    sendToEngine({ kind: "ACTION", action });
-    return;
-  }
-
-  sendToEngine({ kind: "ACTION", action: tickFallbackAction(me, nearby) });
 }
 
 export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Crisis): Promise<void> {
-  const { kernel, environment, skills, agentId, activityQueue, cautionList } = deps;
-
-  const interrupted = activityQueue.interrupt();
-  if (interrupted) {
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.ACTIVITY_INTERRUPTED,
-        tick,
-        actorId: agentId,
-        payload: { activity: interrupted.kind, crisisId: crisis.id },
-      },
-    });
-  }
+  const { kernel, environment, skills, agentId, crisisCautions } = deps;
 
   for (const skill of skills.all()) {
     if (skillResolvesCrisis(skill, crisis, environment)) {
       sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: skill.id, crisisId: crisis.id } });
-      activityQueue.resume(tick);
       return;
     }
   }
 
-  const caution = cautionList.find((c) => c.crisisType.toLowerCase() === crisis.type.toLowerCase());
-  const cautionSuffix = caution
-    ? ` NOTE: a community member died facing this — they tried "${caution.lastAttempt?.skillName ?? "unknown"}" and it failed. Find a different approach.`
-    : "";
+  const caution = crisisCautions.get(crisis.type.toLowerCase());
+  const situation = caution
+    ? `${crisis.type} — ${crisis.description}. NOTE: ${caution}`
+    : `${crisis.type} — ${crisis.description}`;
 
   const result = await kernel.evolve({
     tick,
-    situation: `${crisis.type} — ${crisis.description}${cautionSuffix}`,
+    situation,
     crisis,
     inventory: [],
     knownSkills: skills.all(),
   });
 
-  if (result.status !== "accepted") {
-    activityQueue.resume(tick);
-    return;
-  }
+  if (result.status !== "accepted") return;
 
   skills.add(result.skill);
   await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
-  await broadcastSkill(deps, tick, result.skill);
-
+  await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id });
+  sendToEngine({
+    kind: "EVENT",
+    event: { type: EventType.SKILL_TAUGHT, tick, actorId: agentId, payload: { skillId: result.skill.id, to: "*", skill: result.skill } },
+  });
   sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: result.skill.id, crisisId: crisis.id } });
-  activityQueue.resume(tick);
 }
 
 export async function handlePeerMessage(
@@ -173,211 +76,53 @@ export async function handlePeerMessage(
   tick: number,
   msg: { from: string; payload: unknown },
 ): Promise<void> {
-  const { agentId, personality, kernel, skills } = deps;
+  const { agentId, kernel, skills, crisisCautions } = deps;
 
   if (isDeathWarning(msg.payload)) {
-    const { cause, activeCrises, lastAttempt } = msg.payload;
-
-    for (const crisis of activeCrises) {
-      deps.cautionList.push({ crisisType: crisis.type, crisisDescription: crisis.description, cause, lastAttempt, tick });
-    }
-
+    const { crisisType, crisisDescription } = msg.payload;
+    crisisCautions.set(crisisType.toLowerCase(), `a peer died facing a ${crisisType} (${crisisDescription}) — find a better approach.`);
     sendToEngine({
       kind: "EVENT",
-      event: {
-        type: EventType.DEATH_WARNING,
-        tick,
-        actorId: agentId,
-        payload: { from: msg.from, cause, activeCrises, lastAttempt },
-      },
+      event: { type: EventType.DEATH_WARNING, tick, actorId: agentId, payload: { from: msg.from, crisisType, crisisDescription } },
     });
-
-    // Proactive evolve: if we have no skill for a crisis our community member just died from, start thinking now
-    for (const crisis of activeCrises) {
-      const hasCrisisSkill = deps.skills.all().some((s) =>
-        skillResolvesCrisis(s, crisis as Crisis, deps.environment),
-      );
-      if (!hasCrisisSkill) {
-        const attemptContext = lastAttempt
-          ? ` They tried "${lastAttempt.skillName}" (${lastAttempt.skillEffect}) but it wasn't enough.`
-          : "";
-        void deps.kernel.evolve({
-          tick,
-          situation: `prepare for ${crisis.type} — a community member just died from it.${attemptContext} Find a better approach.`,
-          crisis: crisis as Crisis,
-          inventory: [],
-          knownSkills: deps.skills.all(),
-        }).then(async (result) => {
-          if (result.status !== "accepted") return;
-          deps.skills.add(result.skill);
-          void deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
-          sendToEngine({
-            kind: "EVENT",
-            event: { type: EventType.SKILL_ACCEPTED, tick, actorId: deps.agentId, payload: { skillId: result.skill.id, skill: result.skill, triggeredBy: "death_warning" } },
-          });
-          await broadcastSkill(deps, tick, result.skill);
-        });
-      }
-    }
     return;
   }
 
   if (!isTeachPayload(msg.payload)) return;
 
-  const skillId = msg.payload.skillId;
+  const { skillId } = msg.payload;
   if (skills.has(skillId)) return;
 
   const skill = await kernel.storage.getSkill(skillId);
   if (!skill) return;
 
-  // Redundancy check — reject if we already have a better equivalent
-  if (hasBetterSkill(skill, skills)) {
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.SKILL_REJECTED_BY_PEER,
-        tick,
-        actorId: agentId,
-        payload: { skillId, from: msg.from, reason: "redundant" },
-      },
-    });
-    return;
-  }
-
-  // LLM-based acceptance: personality decides whether this skill fits who they are
-  const community = await kernel.storage.getAgentSocialGraph(agentId);
-  const inCommunity = community.includes(msg.from);
-  const acceptPrompt = [
-    `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
-    `${inCommunity ? "A trusted community member" : "A stranger"} is offering to teach you this skill:`,
-    `Skill: "${skill.name}" — ${skill.description}`,
-    `Effect: ${skill.effect}`,
-    `Quality score: ${skill.provenance.selfEvalScore.toFixed(2)}/1.0`,
-    `Given your personality and traits, would you adopt this skill? Reply ONLY with JSON: { "accept": boolean, "reason": "one sentence" }`,
-  ].join("\n");
-
-  let accepted = false;
-  try {
-    const resp = await kernel.compute.infer(acceptPrompt, { verifiable: false });
-    const json = extractJson(resp.text);
-    accepted = (JSON.parse(json) as { accept: boolean }).accept;
-  } catch {
-    accepted = inCommunity;
-  }
-
-  if (!accepted) {
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.SKILL_REJECTED_BY_PEER,
-        tick,
-        actorId: agentId,
-        payload: { skillId, from: msg.from, reason: "personality_mismatch", inCommunity },
-      },
-    });
-    return;
-  }
-
-  // Accept
   skills.add(skill);
   await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
-
-  // Bond: add sender to our social graph if not already there
-  if (!community.includes(msg.from)) {
-    const updated = [...community, msg.from];
-    await kernel.storage.putAgentSocialGraph(agentId, updated);
-    sendToEngine({
-      kind: "EVENT",
-      event: {
-        type: EventType.SOCIAL_GRAPH_UPDATED,
-        tick,
-        actorId: agentId,
-        payload: { newMember: msg.from },
-      },
-    });
-  }
-
   sendToEngine({
     kind: "EVENT",
-    event: {
-      type: EventType.SKILL_ACCEPTED_FROM_PEER,
-      tick,
-      actorId: agentId,
-      payload: { skillId, from: msg.from, skill },
-    },
+    event: { type: EventType.SKILL_LEARNED, tick, actorId: agentId, payload: { skillId, from: msg.from, skill } },
   });
-  sendToEngine({
-    kind: "EVENT",
-    event: {
-      type: EventType.SKILL_LEARNED,
-      tick,
-      actorId: agentId,
-      payload: { skillId, from: msg.from, skill },
-    },
-  });
-
 }
 
 export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecessorIds?: string[]): Promise<void> {
-  if (!predecessorIds || predecessorIds.length === 0) return;
+  if (!predecessorIds?.length) return;
 
   const seen = new Set<string>();
   for (const predecessorId of predecessorIds) {
     const ids = await deps.kernel.storage.getAgentInventory(predecessorId);
     for (const skillId of ids) {
-      if (seen.has(skillId)) continue;
+      if (seen.has(skillId) || deps.skills.has(skillId)) continue;
       seen.add(skillId);
-      if (deps.personality.innateSkills.includes(skillId)) continue;
-      if (deps.skills.has(skillId)) continue;
       const skill = await deps.kernel.storage.getSkill(skillId);
       if (!skill) continue;
       deps.skills.add(skill);
       sendToEngine({
         kind: "EVENT",
-        event: {
-          type: EventType.SKILL_INHERITED,
-          tick,
-          actorId: deps.agentId,
-          payload: { skillId: skill.id, skill, from: skill.provenance.inventedBy },
-        },
+        event: { type: EventType.SKILL_INHERITED, tick, actorId: deps.agentId, payload: { skillId: skill.id, skill, from: skill.provenance.inventedBy } },
       });
     }
   }
-
   if (seen.size > 0) {
     await deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
   }
-}
-
-function activityFromSkill(skill: Skill): AgentAction {
-  const text = `${skill.name} ${skill.effect} ${skill.description}`.toLowerCase();
-  if (/rest|sleep|recover|energy/.test(text)) return { kind: "REST" };
-  if (/forag|berr|gather|hunt|collect/.test(text)) return { kind: "FORAGE" };
-  if (/farm|grow|plant|cultivat|grass/.test(text)) return { kind: "FARM" };
-  if (/talk|social|communicat|chat/.test(text)) return { kind: "SOCIALIZE", targetId: "" };
-  return { kind: "EXPERIMENT" };
-}
-
-function durationForAction(kind: string): number {
-  if (kind === "REST") return 5;
-  if (kind === "FORAGE") return 2;
-  if (kind === "FARM") return 4;
-  if (kind === "EXPERIMENT") return 8;
-  return 3;
-}
-
-function extractJson(text: string): string {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0) throw new Error("no JSON");
-  return text.slice(start, end + 1);
-}
-
-function tickFallbackAction(me: AgentInWorld, nearby: AgentInWorld[]): AgentAction {
-  if (me.food <= 15 || me.needs.hunger >= 50) return { kind: "FORAGE" };
-  if (me.needs.energy <= 25) return { kind: "REST" };
-  if (nearby.length > 0) return { kind: "SOCIALIZE", targetId: nearby[0]!.id };
-  const dx = (Math.random() - 0.5) * 20;
-  const dy = (Math.random() - 0.5) * 20;
-  return { kind: "MOVE", dx, dy };
 }
