@@ -38,6 +38,7 @@ export type DecisionDeps = {
   knownPeerIds: string[];
   activityQueue: ActivityQueue;
   cautionList: CautionEntry[];
+  curioEvolvedIds: Set<string>;
 };
 
 export function isTeachPayload(x: unknown): x is TeachPayload {
@@ -135,9 +136,10 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     sendToEngine({ kind: "EVENT", event: { type: EventType.ACTIVITY_STARTED, tick, actorId: agentId, payload: { activity: action.kind, skillId: matchingSkill.id } } });
     sendToEngine({ kind: "ACTION", action });
 
-    // Curiosity-driven growth: re-evolve a well-used skill
+    // Curiosity-driven growth: evolve a well-used skill once (gate by base skill ID to prevent spam)
     const growthThreshold = 8;
-    if (updated.useCount >= growthThreshold && me.needs.curiosity >= 65) {
+    if (updated.useCount >= growthThreshold && me.needs.curiosity >= 65 && !deps.curioEvolvedIds.has(matchingSkill.id)) {
+      deps.curioEvolvedIds.add(matchingSkill.id);
       void kernel.evolve({
         tick,
         situation: `improve my ${matchingSkill.name} technique after using it ${updated.useCount} times`,
@@ -146,6 +148,7 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
         knownSkills: skills.all(),
       }).then(async (result) => {
         if (result.status !== "accepted") return;
+        if (skills.all().some((s) => s.name === result.skill.name)) return;
         skills.add(result.skill);
         void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
         sendToEngine({ kind: "EVENT", event: { type: EventType.CURIOSITY_EVOLVED, tick, actorId: agentId, payload: { skillId: result.skill.id, inspiredBy: matchingSkill.id, skill: result.skill } } });
@@ -370,9 +373,10 @@ export async function handlePeerMessage(
     },
   });
 
-  // Curiosity-driven discovery: curious agents try to improve on what they just learned
+  // Curiosity-driven discovery: curious agents try to improve on what they just learned (once per skill)
   const isCurious = personality.traits.some((t) => t.toLowerCase().includes("curious"));
-  if (isCurious) {
+  if (isCurious && !deps.curioEvolvedIds.has(skill.id)) {
+    deps.curioEvolvedIds.add(skill.id);
     void kernel.evolve({
       tick,
       situation: `explore what's possible beyond ${skill.name}`,
@@ -381,8 +385,9 @@ export async function handlePeerMessage(
       knownSkills: skills.all(),
     }).then(async (result) => {
       if (result.status !== "accepted") return;
-      skills.add(result.skill);
-      void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+      if (deps.skills.all().some((s) => s.name === result.skill.name)) return;
+      deps.skills.add(result.skill);
+      void deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
       sendToEngine({
         kind: "EVENT",
         event: {

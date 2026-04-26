@@ -52,7 +52,7 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
       const environment = config.environment!;
       const { emit } = config;
 
-      emit({ type: EventType.REASONING_STARTED, payload: { situation } });
+      emit({ type: EventType.REASONING_STARTED, payload: { situation, crisisId: crisis?.id } });
 
       const reasonPrompt = buildReasonPrompt({
         personality,
