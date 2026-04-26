@@ -7,6 +7,11 @@ Hackathon: Open Agents. Target sponsor prizes: **0G (Storage + Compute)** and **
 **Status:** Design spec complete, nothing built yet. Full spec at `docs/superpowers/specs/2026-04-24-civilisation-emergence-design.md` — read it first.
 
 ---
+before diving deep into the codebase, always ask me what you are about to read and why. you have to be very minimal and avoid any overengineering or unnecessary things.
+
+DON'T GO THROUGH PROJECT STRUCTURE AND ARCHITECTURE AGAIN AND AGAIN
+DON'T do any git commit
+---
 
 ## Three-part architecture
 
@@ -132,3 +137,52 @@ Tier-2 features (second crisis, skill composition, reputation, lossy teaching) a
 - **Risks + day-1 de-risking:** spec §16
 
 Read the spec before writing code. Ask before changing anything in `shared/`.
+
+--------------------------------------------------------------------------------------------
+Moirai Codebase — Architecture Summary
+
+  Project: Agent-village simulation (TypeScript monorepo, packages/)
+
+  ---
+  Package Map
+
+  ┌───────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │    Package    │                                                              Role                                                              │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ shared        │ Type definitions only — Skill, Crisis, Personality, WorldState, IPC messages, events                                           │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ kernel        │ Interface contracts only — IComputeAdapter, IStorageAdapter, INetworkAdapter. Real 0G adapters are external.                   │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ personality   │ 5 JSON configs (alice/bob/cara/dave/eve): traits, risk, innate skills, prompt fragments                                        │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ environment   │ World configs (one: savannah.json) with physics rules + crisis schedule. One helper: skillResolvesCrisis() via keyword overlap │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ engine        │ Orchestrator: tick loop, crisis injection, agent process supervision, WebSocket bridge                                         │
+  ├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ agent-runtime │ Per-agent child process: loads personality, runs decision loop, manages skill set                                              │
+  └───────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  What's Implemented
+
+  - Tick loop — engine ticks every N ms, increments hunger per agent, fires scheduled crises
+  - Decision loop — crisis arrives → check known skills → if none, call kernel.evolve() → learn new skill → whisper to random peer → peer inherits
+  - Hunger system — linear increment only; agent dies at threshold; dead agent stays in map (alive: false)
+  - Crisis orchestrator — schedule-based injection ({ tick, type, targets, deadlineTicks }); deadline expiry handled in tick
+  - Dev adapters — fake LLM (DevComputeAdapter), file-based storage (/tmp/moirai-dev/skills.json + events.json), IPC peer messaging
+  - Skill persistence — skills survive process restarts via dev storage; new agents inherit all stored skills on spawn
+  - Agent lifecycle — spawn → tick → death → respawn from inheritorPool personality pool
+  - World state shape — { tick, agents: Record<id, {position, alive, hunger, inventory}>, activeCrises[] }
+  - Inventory — each agent starts with ["rocks", "sticks"]; no consumption logic
+
+  ---
+  Key Files
+
+  - packages/agent-runtime/src/decisionLoop.ts — full agent decision logic
+  - packages/engine/src/index.ts — tick loop + agent lifecycle
+  - packages/engine/src/world.ts — world primitives (spawn, kill, crisis list)
+  - packages/engine/src/crisisOrchestrator.ts — crisis scheduling
+  - packages/shared/src/types/world.ts — WorldState and AgentInWorld types
+  - packages/agent-runtime/src/__dev__/devKernel.ts — simulated evolve() + self-eval logic
+  - packages/agent-runtime/src/__dev__/devStorage.ts — file-based skill/event persistence
+

@@ -1,0 +1,21 @@
+{
+  "name": "@moirai/agent-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@moirai/shared": "workspace:*",
+    "@moirai/kernel": "workspace:*",
+    "@moirai/personality": "workspace:*",
+    "@moirai/environment": "workspace:*"
+  }
+}

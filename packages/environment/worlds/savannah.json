@@ -1,0 +1,48 @@
+{
+  "id": "savannah",
+  "physics": [
+    "rocks fly when thrown",
+    "sticks break when bent hard",
+    "lions fear pointy things",
+    "fire scares predators",
+    "water cannot be eaten",
+    "loud noise startles animals"
+  ],
+  "resources": ["rocks", "sticks", "berries", "water", "grass"],
+  "topology": "open",
+  "crisisSchedule": [
+    {
+      "tick": 40,
+      "type": "LION",
+      "description": "A lion approaches and stalks the agents",
+      "targets": ["alice", "bob"],
+      "deadlineTicks": 12
+    },
+    {
+      "tick": 140,
+      "type": "LION",
+      "description": "A second lion appears at the watering hole",
+      "deadlineTicks": 10
+    }
+  ],
+  "hiddenRules": [
+    {
+      "id": "dawn-forage",
+      "trigger": { "activity": "FORAGE", "condition": "tick is divisible by 20" },
+      "effect": "Foraging at dawn yields double berries",
+      "multiplier": 2
+    },
+    {
+      "id": "group-farm",
+      "trigger": { "activity": "FARM", "condition": "two or more agents are farming simultaneously" },
+      "effect": "Collaborative farming yields triple food",
+      "multiplier": 3
+    },
+    {
+      "id": "rest-curiosity",
+      "trigger": { "activity": "REST", "condition": "agent has eaten in the last 10 ticks" },
+      "effect": "Resting while well-fed accelerates curiosity growth",
+      "multiplier": 2
+    }
+  ]
+}
