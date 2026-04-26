@@ -4,8 +4,12 @@ export type EvalResponse = { score: number; failureModes: string[] };
 
 function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const body = fenced && fenced[1] ? fenced[1] : text;
-  return JSON.parse(body.trim());
+  if (fenced && fenced[1]) return JSON.parse(fenced[1].trim());
+  // Fall back to first {...} block in case LLM wraps JSON in prose
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));
+  return JSON.parse(text.trim());
 }
 
 export function parseCandidate(text: string): CandidateSkill {

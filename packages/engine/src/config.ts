@@ -13,6 +13,8 @@ export type EngineConfig = {
   /** Personality IDs reserved for late-spawn (inheritance-demo) agents. */
   inheritorPool: string[];
   episodePersistenceDir: string;
+  /** Load the latest saved episode on boot (default: false — always start fresh). */
+  resumeFromEpisode: boolean;
   devStorageDir?: string;
 };
 
@@ -48,6 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): EngineConfig {
     forcedDeaths: parseForcedDeaths(env.MOIRAI_FORCED_DEATHS),
     inheritorPool,
     episodePersistenceDir: env.MOIRAI_EPISODE_DIR ?? "/tmp/moirai-episodes",
+    resumeFromEpisode: env.MOIRAI_RESUME === "true",
     ...(env.MOIRAI_DEV_STORAGE ? { devStorageDir: env.MOIRAI_DEV_STORAGE } : {}),
   };
 }

@@ -55,6 +55,36 @@ services:
     networks:
       - axlnet
 
+  dave:
+    image: moirai-axl:local
+    depends_on:
+      - alice
+    container_name: moirai-axl-dave
+    hostname: dave
+    command: ["-config", "/configs/dave.json"]
+    volumes:
+      - ./docker/axl/configs:/configs:ro
+      - ./docker/axl/keys:/keys:ro
+    ports:
+      - "19032:9002"
+    networks:
+      - axlnet
+
+  eve:
+    image: moirai-axl:local
+    depends_on:
+      - alice
+    container_name: moirai-axl-eve
+    hostname: eve
+    command: ["-config", "/configs/eve.json"]
+    volumes:
+      - ./docker/axl/configs:/configs:ro
+      - ./docker/axl/keys:/keys:ro
+    ports:
+      - "19042:9002"
+    networks:
+      - axlnet
+
 networks:
   axlnet:
     driver: bridge

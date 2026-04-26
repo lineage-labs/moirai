@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/index.ts",
     "smoke": "tsx src/smoke.ts",
-    "sim": "tsx src/sim.ts"
+    "sim": "tsx src/sim.ts",
+    "sim-live": "node --env-file-if-exists=../../.env --import tsx src/sim-live.ts"
   },
   "dependencies": {
     "@moirai/shared": "workspace:*",

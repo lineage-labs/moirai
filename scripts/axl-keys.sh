@@ -11,7 +11,7 @@ OPENSSL="${OPENSSL:-openssl}"
 
 mkdir -p "$KEY_DIR"
 
-for name in alice bob charlie; do
+for name in alice bob charlie dave eve; do
   out="${KEY_DIR}/${name}.pem"
   if [[ -f "$out" ]]; then
     echo "exists: $out"
@@ -22,4 +22,4 @@ for name in alice bob charlie; do
   fi
 done
 
-echo "Keys ready. Run: docker compose -f docker-compose.axl.yml build && docker compose -f docker-compose.axl.yml up -d"
+echo "Keys ready (alice bob charlie dave eve). Run: docker compose -f docker-compose.axl.yml build && docker compose -f docker-compose.axl.yml up -d"

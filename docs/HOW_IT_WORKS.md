@@ -282,3 +282,18 @@ pnpm typecheck    # runs tsc --noEmit across all packages
 | `CURIOSITY_EVOLVED` | agent | Curious agent improved on a known skill |
 | `FOOD_GATHERED` | engine | FORAGE or FARM action completed |
 | `HIDDEN_RULE_DISCOVERED` | engine | Agent triggered a hidden world rule |
+
+
+## RUN
+# 1. Generate keys for all 5 nodes (skips existing ones)
+  pnpm axl:mesh:keys
+
+  # 2. Restart the mesh with the 2 new nodes (dave + eve)
+  docker compose -f docker-compose.axl.yml down
+  pnpm axl:mesh:up   # builds image + starts all 5 containers
+
+  # 3. (Optional) verify all 5 nodes are up
+  bash scripts/axl-mesh-check.sh
+
+  # 4. Run the live simulation
+  pnpm --filter @moirai/engine sim-live

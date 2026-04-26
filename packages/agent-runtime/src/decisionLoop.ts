@@ -38,7 +38,6 @@ export type DecisionDeps = {
   knownPeerIds: string[];
   activityQueue: ActivityQueue;
   cautionList: CautionEntry[];
-  curioEvolvedIds: Set<string>;
 };
 
 export function isTeachPayload(x: unknown): x is TeachPayload {
@@ -80,51 +79,29 @@ async function broadcastSkill(deps: DecisionDeps, tick: number, skill: Skill): P
 }
 
 export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWorld, nearby: AgentInWorld[]): Promise<void> {
-  const { agentId, activityQueue, personality, environment, kernel, skills, cautionList } = deps;
+  const { agentId, activityQueue, kernel, skills } = deps;
 
+  // Continue queued multi-tick activity
   const current = activityQueue.tick(tick);
   if (current) {
     sendToEngine({ kind: "ACTION", action: current });
     return;
   }
 
-  const needsSummary = `hunger=${me.needs.hunger}/100 energy=${me.needs.energy}/100 curiosity=${me.needs.curiosity}/100 food_stock=${me.food}`;
-  const skillList = skills.all().map((s) => `- ${s.name}: ${s.effect} (used ${s.useCount ?? 0}x)`).join("\n") || "(none)";
-  const nearbyList = nearby.map((a) => a.id).join(", ") || "nobody";
-  const uniqueCautions = [...new Map(cautionList.map((c) => [c.crisisType, c])).values()];
-  const cautionContext = uniqueCautions.length > 0
-    ? `WARNINGS from community deaths:\n${uniqueCautions.map((c) => {
-        const attempt = c.lastAttempt ? ` They tried "${c.lastAttempt.skillName}" (${c.lastAttempt.skillEffect}) — it failed.` : "";
-        return `- ${c.crisisType}: ${c.crisisDescription}. Cause of death: ${c.cause}.${attempt}`;
-      }).join("\n")}`
-    : "";
-
-  const reasonPrompt = [
-    `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
-    personality.promptFragments.reasoning ?? "",
-    `Current needs: ${needsSummary}`,
-    `Environment: ${environment.physics.join("; ")}`,
-    `Resources available: ${environment.resources.join(", ")}`,
-    `Known skills:\n${skillList}`,
-    `Nearby agents: ${nearbyList}`,
-    cautionContext,
-    `Tick: ${tick}`,
-    `Decide ONE action to address your most pressing need. Reply ONLY with JSON: { "action": "short phrase", "reason": "one sentence" }`,
-    `Examples: { "action": "find berries to eat" } or { "action": "rest and recover energy" } or { "action": "experiment with grass bundles" }`,
-  ].filter(Boolean).join("\n");
-
-  let intendedAction: string;
-  try {
-    const resp = await kernel.compute.infer(reasonPrompt, { verifiable: false });
-    const json = extractJson(resp.text);
-    const parsed = JSON.parse(json) as { action?: unknown };
-    const action = typeof parsed.action === "string" ? parsed.action.trim() : "";
-    intendedAction = action.length > 0 ? action : me.needs.hunger > 50 ? "find food" : "rest";
-  } catch {
-    intendedAction = me.needs.hunger > 50 ? "find food" : "rest";
+  // Need-based situation label — pure heuristic, no LLM blocking call
+  let situation: string;
+  if (me.food <= 15 || me.needs.hunger >= 50) {
+    situation = "find food to survive hunger";
+  } else if (me.needs.energy <= 25) {
+    situation = "rest and recover energy";
+  } else if (me.needs.curiosity >= 75) {
+    situation = "experiment and discover something new";
+  } else {
+    situation = "explore the environment";
   }
 
-  const matchingSkill = skills.all().find((s) => skillCoversActivity(s, intendedAction));
+  // Check existing skills for this need
+  const matchingSkill = skills.all().find((s) => skillCoversActivity(s, situation));
 
   if (matchingSkill) {
     const updated = { ...matchingSkill, useCount: (matchingSkill.useCount ?? 0) + 1 };
@@ -135,44 +112,10 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     activityQueue.start(action, tick, durationForAction(action.kind));
     sendToEngine({ kind: "EVENT", event: { type: EventType.ACTIVITY_STARTED, tick, actorId: agentId, payload: { activity: action.kind, skillId: matchingSkill.id } } });
     sendToEngine({ kind: "ACTION", action });
-
-    // Curiosity-driven growth: evolve a well-used skill once (gate by base skill ID to prevent spam)
-    const growthThreshold = 8;
-    if (updated.useCount >= growthThreshold && me.needs.curiosity >= 65 && !deps.curioEvolvedIds.has(matchingSkill.id)) {
-      deps.curioEvolvedIds.add(matchingSkill.id);
-      void kernel.evolve({
-        tick,
-        situation: `improve my ${matchingSkill.name} technique after using it ${updated.useCount} times`,
-        seedSkill: matchingSkill,
-        inventory: me.inventory,
-        knownSkills: skills.all(),
-      }).then(async (result) => {
-        if (result.status !== "accepted") return;
-        if (skills.all().some((s) => s.name === result.skill.name)) return;
-        skills.add(result.skill);
-        void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
-        sendToEngine({ kind: "EVENT", event: { type: EventType.CURIOSITY_EVOLVED, tick, actorId: agentId, payload: { skillId: result.skill.id, inspiredBy: matchingSkill.id, skill: result.skill } } });
-        await broadcastSkill(deps, tick, result.skill);
-      });
-    }
     return;
   }
 
-  // No skill covers the intended action — evolve a new one
-  await kernel.evolve({
-    tick,
-    situation: intendedAction,
-    inventory: me.inventory,
-    knownSkills: skills.all(),
-  }).then(async (result) => {
-    if (result.status !== "accepted") return;
-    skills.add(result.skill);
-    void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
-    const action = activityFromSkill(result.skill);
-    activityQueue.start(action, tick, durationForAction(action.kind));
-    sendToEngine({ kind: "ACTION", action });
-    await broadcastSkill(deps, tick, result.skill);
-  });
+  sendToEngine({ kind: "ACTION", action: tickFallbackAction(me, nearby) });
 }
 
 export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Crisis): Promise<void> {
@@ -373,33 +316,6 @@ export async function handlePeerMessage(
     },
   });
 
-  // Curiosity-driven discovery: curious agents try to improve on what they just learned (once per skill)
-  const isCurious = personality.traits.some((t) => t.toLowerCase().includes("curious"));
-  if (isCurious && !deps.curioEvolvedIds.has(skill.id)) {
-    deps.curioEvolvedIds.add(skill.id);
-    void kernel.evolve({
-      tick,
-      situation: `explore what's possible beyond ${skill.name}`,
-      seedSkill: skill,
-      inventory: [],
-      knownSkills: skills.all(),
-    }).then(async (result) => {
-      if (result.status !== "accepted") return;
-      if (deps.skills.all().some((s) => s.name === result.skill.name)) return;
-      deps.skills.add(result.skill);
-      void deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
-      sendToEngine({
-        kind: "EVENT",
-        event: {
-          type: EventType.CURIOSITY_EVOLVED,
-          tick,
-          actorId: agentId,
-          payload: { skillId: result.skill.id, inspiredBy: skill.id, skill: result.skill },
-        },
-      });
-      await broadcastSkill(deps, tick, result.skill);
-    });
-  }
 }
 
 export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecessorIds?: string[]): Promise<void> {
@@ -455,4 +371,13 @@ function extractJson(text: string): string {
   const end = text.lastIndexOf("}");
   if (start < 0 || end < 0) throw new Error("no JSON");
   return text.slice(start, end + 1);
+}
+
+function tickFallbackAction(me: AgentInWorld, nearby: AgentInWorld[]): AgentAction {
+  if (me.food <= 15 || me.needs.hunger >= 50) return { kind: "FORAGE" };
+  if (me.needs.energy <= 25) return { kind: "REST" };
+  if (nearby.length > 0) return { kind: "SOCIALIZE", targetId: nearby[0]!.id };
+  const dx = (Math.random() - 0.5) * 20;
+  const dy = (Math.random() - 0.5) * 20;
+  return { kind: "MOVE", dx, dy };
 }

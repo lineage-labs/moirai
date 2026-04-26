@@ -20,7 +20,7 @@ export function spawnAgent(world: WorldState, agentId: string, personalityId: st
     position: randomPosition(),
     alive: true,
     needs: { ...INITIAL_NEEDS },
-    food: 10,
+    food: 50,
     inventory: ["rocks", "sticks"],
   };
   world.agents[agentId] = agent;

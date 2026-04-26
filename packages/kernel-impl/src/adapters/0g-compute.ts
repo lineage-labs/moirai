@@ -187,7 +187,13 @@ export class ZeroGComputeAdapter implements IComputeAdapter {
     this.acknowledged.add(providerAddress);
   }
 
+  private ledgerReady = false;
+
   private async sealedInfer(prompt: string, opts: InferOpts): Promise<InferResult> {
+    if (!this.ledgerReady) {
+      await this.ensureComputeLedgerAndInferenceFunds();
+      this.ledgerReady = true;
+    }
     const broker = await this.getBroker();
     const svc = await this.resolveService(true);
     await this.ensureAcknowledged(broker, svc.providerAddress);

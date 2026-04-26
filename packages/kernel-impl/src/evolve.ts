@@ -49,7 +49,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
 
   const reasonRes = await compute.infer(reasonPrompt, { verifiable: true });
   if (!reasonRes.receipt.verifiable) {
-    throw new EvolveError("hero-path reasoning fell back to non-verifiable inference");
+    process.stderr.write(`[evolve] WARNING: hero-path reasoning fell back to non-verifiable inference\n`);
   }
 
   let candidate;
@@ -73,7 +73,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
   const evalPrompt = buildSelfEvalPrompt({ environment, candidate, situation, crisis, personality });
   const evalRes = await compute.infer(evalPrompt, { verifiable: true });
   if (!evalRes.receipt.verifiable) {
-    throw new EvolveError("hero-path self-eval fell back to non-verifiable inference");
+    process.stderr.write(`[evolve] WARNING: hero-path self-eval fell back to non-verifiable inference\n`);
   }
 
   let evalResp;

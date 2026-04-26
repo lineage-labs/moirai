@@ -47,8 +47,8 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const bus = new EventBus();
   const episodeDir = config.episodePersistenceDir;
   const episodeId = nextEpisodeId(episodeDir);
-  const previousEpisode = loadLatestEpisode(episodeDir);
-  if (previousEpisode) {
+  const previousEpisode = config.resumeFromEpisode ? loadLatestEpisode(episodeDir) : null;
+  if (previousEpisode && previousEpisode.world.tick < config.maxTicks) {
     Object.assign(world, previousEpisode.world);
     bus.emit(domainEvent(EventType.EPISODE_LOADED, world.tick, "engine", {
       episodeId: previousEpisode.episodeId,
@@ -62,6 +62,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const communityGraph = new Map<string, Set<string>>();
   const lastSkillAttempt = new Map<string, { skillId: string; skillName: string; crisisId: string }>();
   const discoveredRules = new Map<string, Set<string>>(); // agentId → ruleIds already surfaced
+  const evolvingAgents = new Set<string>(); // agents with a pending 0G compute call — immune to hunger death
 
   function addCommunityBond(a: string, b: string): void {
     if (!communityGraph.has(a)) communityGraph.set(a, new Set());
@@ -128,13 +129,15 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
 
     replenishFoodPool(world);
 
+    const diedThisTick: string[] = [];
+
     for (const a of Object.values(world.agents)) {
       if (!a.alive) continue;
 
       decayAgentNeeds(world, a.id);
 
       const forced = config.forcedDeaths.find((d) => d.agentId === a.id && d.tick === world.tick);
-      if (forced || a.needs.hunger >= 100) {
+      if ((forced || a.needs.hunger >= 100) && !evolvingAgents.has(a.id)) {
         killAgent(world, a.id);
         bus.emit(
           domainEvent(EventType.AGENT_DIED, world.tick, a.id, {
@@ -164,25 +167,29 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
           }
         }
         lastSkillAttempt.delete(a.id);
-
-        const next = inheritorQueue.shift();
-        if (next) void respawn(next);
+        evolvingAgents.delete(a.id);
+        diedThisTick.push(a.id);
       } else {
         const view = nearbyAgents(world, a.id);
         supervisor.send(a.id, { kind: "TICK", tick: world.tick, me: a, nearby: view });
       }
     }
 
+    // Spawn inheritors after all deaths are collected so predecessorIds is the full dead list
+    for (const _ of diedThisTick) {
+      const next = inheritorQueue.shift();
+      if (next) void respawn(next, diedThisTick);
+    }
+
     if (world.tick % 4 === 0) emitWorld();
     if (world.tick >= config.maxTicks) void stop();
   }
 
-  async function respawn(personalityId: string): Promise<void> {
+  async function respawn(personalityId: string, predecessorIds: string[] = []): Promise<void> {
     const personalityPath = seedPersonalityPath(personalityId);
     const p = await loadPersonality(personalityPath);
     const agentId = p.id;
     spawnAgent(world, agentId, p.id);
-    const predecessorIds = nearbyAgents(world, agentId).map((a) => a.id);
     bus.emit(domainEvent(EventType.AGENT_SPAWNED, world.tick, agentId, { personalityId: p.id, fresh: true, inheritedFrom: predecessorIds }));
     const handle = supervisor.spawn({
       agentId,
@@ -210,6 +217,8 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         if (enriched.type === EventType.SOCIAL_GRAPH_UPDATED && payload.newMember) {
           addCommunityBond(agentId, payload.newMember);
         }
+        if (enriched.type === EventType.REASONING_STARTED) evolvingAgents.add(agentId);
+        if (enriched.type === EventType.SKILL_ACCEPTED || enriched.type === EventType.SKILL_REJECTED) evolvingAgents.delete(agentId);
         bus.emit(enriched);
         return;
       }

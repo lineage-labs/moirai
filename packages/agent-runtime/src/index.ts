@@ -19,7 +19,6 @@ type AgentState = {
   knownPeerIds: string[];
   activityQueue: ActivityQueue;
   cautionList: CautionEntry[];
-  curioEvolvedIds: Set<string>;
 };
 
 async function resolveCreateKernel(): Promise<CreateKernel> {
@@ -75,7 +74,6 @@ async function main(): Promise<void> {
           knownPeerIds: msg.peerIds,
           activityQueue,
           cautionList: [],
-          curioEvolvedIds: new Set<string>(),
         };
 
         kernel.net.subscribe(async (peerMsg) => {
