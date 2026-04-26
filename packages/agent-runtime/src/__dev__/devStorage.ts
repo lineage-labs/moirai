@@ -76,7 +76,7 @@ async function withLock<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
 }
 
 export class DevStorageAdapter implements IStorageAdapter {
-  async putSkill(skill: Skill): Promise<{ rootHash: string }> {
+  async putSkill(skill: Skill): Promise<{ id: string }> {
     await mkdir(SHARED_DIR, { recursive: true });
     await withLock(SKILLS_FILE, async () => {
       const skills = await readArray<Skill>(SKILLS_FILE);
@@ -85,14 +85,12 @@ export class DevStorageAdapter implements IStorageAdapter {
         await writeArrayAtomic(SKILLS_FILE, skills);
       }
     });
-    return { rootHash: skill.id };
+    return { id: skill.id };
   }
 
-  async getSkill(rootHash: string): Promise<Skill> {
+  async getSkill(id: string): Promise<Skill | null> {
     const skills = await withLock(SKILLS_FILE, () => readArray<Skill>(SKILLS_FILE));
-    const found = skills.find((s) => s.id === rootHash);
-    if (!found) throw new Error(`skill ${rootHash} not found`);
-    return found;
+    return skills.find((s) => s.id === id) ?? null;
   }
 
   async listSkills(filter?: { minScore?: number }): Promise<Skill[]> {
@@ -127,16 +125,13 @@ export class DevStorageAdapter implements IStorageAdapter {
     return map[agentId] ?? [];
   }
 
-  async appendEvent(event: DomainEvent): Promise<{ eventId: string }> {
+  async appendEvent(event: DomainEvent): Promise<void> {
     await mkdir(SHARED_DIR, { recursive: true });
-    let eventId = "";
     await withLock(EVENTS_FILE, async () => {
-      const events = await readArray<DomainEvent & { eventId: string }>(EVENTS_FILE);
-      eventId = `evt_${events.length}_${Date.now()}`;
-      events.push({ ...event, eventId });
+      const events = await readArray<DomainEvent>(EVENTS_FILE);
+      events.push(event);
       await writeArrayAtomic(EVENTS_FILE, events);
     });
-    return { eventId };
   }
 }
 

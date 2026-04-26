@@ -2,8 +2,15 @@ node_modules
 dist
 .tsbuildinfo
 *.tsbuildinfo
+.turbo
 .DS_Store
 .env
 .env.local
 *.log
+.vscode
+.idea
 coverage
+.pnpm-store
+
+# Local AXL mesh keys (docker-compose.axl.yml)
+docker/axl/keys/*.pem

@@ -6,13 +6,13 @@
 // the natural divergence a real LLM produces from different personality prompts.
 
 import { createHash } from "node:crypto";
-import type { ComputeReceipt } from "@moirai/shared";
+import type { Receipt } from "@moirai/shared";
 import type { IComputeAdapter, InferOptions, InferResult } from "@moirai/kernel";
 
 // Deterministic: same prompt → same hash → same skillId → dedup works correctly.
-function fakeReceipt(prompt: string, verifiable: boolean): ComputeReceipt {
+function fakeReceipt(prompt: string, verifiable: boolean): Receipt {
   const hash = "0xdev" + createHash("sha256").update(prompt).digest("hex").slice(0, 28);
-  return { hash, provider: "dev-fixture", model: "dev-canned-llm", signedAt: 0, verifiable };
+  return { hash, verifiable, model: "dev-canned-llm", createdAt: 0 };
 }
 
 // --- Extractors (use specific lines so physics rules don't pollute classification) ---
@@ -180,8 +180,8 @@ export class DevComputeAdapter implements IComputeAdapter {
     return { text, receipt: fakeReceipt(prompt, opts.verifiable) };
   }
 
-  async verifyReceipt(receipt: ComputeReceipt): Promise<boolean> {
-    return receipt.provider === "dev-fixture";
+  async verifyReceipt(_receipt: unknown): Promise<boolean> {
+    return true;
   }
 }
 

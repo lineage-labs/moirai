@@ -5,6 +5,8 @@
 import { createHash } from "node:crypto";
 import {
   EventType,
+  type Environment,
+  type Personality,
   type SelfEvalResult,
   type Skill,
   type SkillCandidate,
@@ -27,14 +29,16 @@ function acceptanceThreshold(risk: number): number {
 }
 
 export async function createKernel(config: KernelConfig): Promise<Kernel> {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const agentId = config.agentId!;
   const compute = new DevComputeAdapter();
   const storage = new DevStorageAdapter();
-  const net = new DevIpcNetworkAdapter(config.agentId, []);
+  const net = new DevIpcNetworkAdapter(agentId, []);
 
   const substrate: Substrate = { compute, storage, net };
 
   return {
-    agentId: config.agentId,
+    agentId,
     substrate,
     compute,
     storage,
@@ -42,7 +46,11 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
     async evolve(input: EvolveInput): Promise<EvolveResult> {
       const { tick, crisis, seedSkill, inventory, knownSkills } = input;
       const situation = input.situation ?? (crisis ? `${crisis.type}: ${crisis.description}` : "general survival planning");
-      const { personality, environment, emit } = config;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const personality = config.personality!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const environment = config.environment!;
+      const { emit } = config;
 
       emit({ type: EventType.REASONING_STARTED, payload: { situation } });
 
@@ -83,15 +91,7 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
           payload: { score: evalResult.score, threshold, failureModes: evalResult.failureModes },
           receiptHash: evalResp.receipt.hash,
         });
-        return {
-          accepted: false,
-          rejection: {
-            score: evalResult.score,
-            failureModes: evalResult.failureModes,
-            reasonReceipt: reasonResp.receipt,
-            evalReceipt: evalResp.receipt,
-          },
-        };
+        return { status: "rejected" as const, score: evalResult.score, failureModes: evalResult.failureModes };
       }
 
       const skillId = hashSkill(candidate, reasonResp.receipt.hash, evalResp.receipt.hash);
@@ -99,7 +99,7 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
         id: skillId,
         ...candidate,
         provenance: {
-          inventedBy: config.agentId,
+          inventedBy: agentId,
           inventedAt: tick,
           bornFrom: crisis
             ? [`crisis:${crisis.id}`]
@@ -120,16 +120,16 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
         receiptHash: evalResp.receipt.hash,
       });
 
-      return { accepted: true, skill, reasonReceipt: reasonResp.receipt, evalReceipt: evalResp.receipt };
+      return { status: "accepted" as const, skill };
     },
     async shutdown() {},
   };
 }
 
 function buildReasonPrompt(args: {
-  personality: KernelConfig["personality"];
-  environment: KernelConfig["environment"];
-  situation: EvolveInput["situation"];
+  personality: Personality;
+  environment: Environment;
+  situation: string;
   crisis: EvolveInput["crisis"];
   seedSkill: EvolveInput["seedSkill"];
   inventory: EvolveInput["inventory"];
@@ -155,7 +155,7 @@ function buildReasonPrompt(args: {
 }
 
 function buildEvalPrompt(args: {
-  environment: KernelConfig["environment"];
+  environment: Environment;
   candidate: SkillCandidate;
 }): string {
   const { environment, candidate } = args;

@@ -59,9 +59,8 @@ async function main(): Promise<void> {
           agentId: msg.agentId,
           personality,
           environment,
-          adapters: {} as KernelConfig["adapters"],
-          emit: (e) => {
-            const event: DomainEvent = { ...e, tick: msg.tick, actorId: msg.agentId };
+          emit: (e: Omit<DomainEvent, "tick" | "actorId">) => {
+            const event: DomainEvent = { tick: msg.tick, actorId: msg.agentId, ...e };
             sendToEngine({ kind: "EVENT", event });
           },
         });
@@ -124,7 +123,7 @@ async function main(): Promise<void> {
         return;
 
       case "SHUTDOWN":
-        if (state) await state.kernel.shutdown();
+        if (state) await state.kernel.shutdown?.();
         process.exit(0);
     }
   });

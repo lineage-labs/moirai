@@ -1,4 +1,5 @@
 import type {
+  AgentContext,
   ComputeReceipt,
   Crisis,
   DomainEvent,
@@ -22,20 +23,14 @@ export type EvolveInput = {
 };
 
 export type EvolveAcceptance = {
-  accepted: true;
+  status: "accepted";
   skill: Skill;
-  reasonReceipt: ComputeReceipt;
-  evalReceipt: ComputeReceipt;
 };
 
 export type EvolveRejection = {
-  accepted: false;
-  rejection: {
-    score: number;
-    failureModes: string[];
-    reasonReceipt: ComputeReceipt;
-    evalReceipt: ComputeReceipt;
-  };
+  status: "rejected";
+  score: number;
+  failureModes: string[];
 };
 
 export type EvolveResult = EvolveAcceptance | EvolveRejection;
@@ -47,18 +42,30 @@ export type Substrate = {
   net: INetworkAdapter;
 };
 
+export class EvolveError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "EvolveError";
+  }
+}
+
 /** What the kernel team's `createKernel()` accepts at construction time. */
 export type KernelConfig = {
-  agentId: string;
-  personality: Personality;
-  environment: Environment;
-  adapters: {
+  // Runtime-centric shape (agent-runtime)
+  agentId?: string;
+  personality?: Personality;
+  environment?: Environment;
+  adapters?: {
     compute: IComputeAdapter;
     storage: IStorageAdapter;
     net: INetworkAdapter;
   };
+  // Kernel-impl-centric shape
+  compute?: IComputeAdapter;
+  storage?: IStorageAdapter;
+  network?: INetworkAdapter;
   /** The kernel calls this to surface domain events emitted during evolve(). */
-  emit: EmitEvent;
+  emit: EmitEvent | ((event: unknown) => void);
 };
 
 /**
@@ -77,13 +84,13 @@ export type KernelConfig = {
  *   - Acceptance threshold is `0.6` adjusted by `personality.risk` per spec §9.
  */
 export type Kernel = {
-  readonly agentId: string;
-  readonly substrate: Substrate;
+  readonly agentId?: string;
+  readonly substrate?: Substrate;
   readonly compute: IComputeAdapter;
   readonly storage: IStorageAdapter;
   readonly net: INetworkAdapter;
   evolve(input: EvolveInput): Promise<EvolveResult>;
-  shutdown(): Promise<void>;
+  shutdown?(): Promise<void>;
 };
 
 /**

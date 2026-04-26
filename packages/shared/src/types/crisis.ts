@@ -2,7 +2,8 @@ export type Crisis = {
   id: string;
   type: string;
   description: string;
-  startedAt: number;
-  deadlineTick: number;
+  startedAtTick: number;
+  deadlineTicks: number;
   affectedAgents: string[];
+  metadata?: Record<string, unknown>;
 };

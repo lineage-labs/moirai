@@ -145,7 +145,7 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
         inventory: me.inventory,
         knownSkills: skills.all(),
       }).then(async (result) => {
-        if (!result.accepted) return;
+        if (result.status !== "accepted") return;
         skills.add(result.skill);
         void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
         sendToEngine({ kind: "EVENT", event: { type: EventType.CURIOSITY_EVOLVED, tick, actorId: agentId, payload: { skillId: result.skill.id, inspiredBy: matchingSkill.id, skill: result.skill } } });
@@ -162,7 +162,7 @@ export async function handleTick(deps: DecisionDeps, tick: number, me: AgentInWo
     inventory: me.inventory,
     knownSkills: skills.all(),
   }).then(async (result) => {
-    if (!result.accepted) return;
+    if (result.status !== "accepted") return;
     skills.add(result.skill);
     void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
     const action = activityFromSkill(result.skill);
@@ -209,7 +209,7 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
     knownSkills: skills.all(),
   });
 
-  if (!result.accepted) {
+  if (result.status !== "accepted") {
     activityQueue.resume(tick);
     return;
   }
@@ -262,7 +262,7 @@ export async function handlePeerMessage(
           inventory: [],
           knownSkills: deps.skills.all(),
         }).then(async (result) => {
-          if (!result.accepted) return;
+          if (result.status !== "accepted") return;
           deps.skills.add(result.skill);
           void deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
           sendToEngine({
@@ -281,12 +281,8 @@ export async function handlePeerMessage(
   const skillId = msg.payload.skillId;
   if (skills.has(skillId)) return;
 
-  let skill: Skill;
-  try {
-    skill = await kernel.storage.getSkill(skillId);
-  } catch {
-    return;
-  }
+  const skill = await kernel.storage.getSkill(skillId);
+  if (!skill) return;
 
   // Redundancy check — reject if we already have a better equivalent
   if (hasBetterSkill(skill, skills)) {
@@ -384,7 +380,7 @@ export async function handlePeerMessage(
       inventory: [],
       knownSkills: skills.all(),
     }).then(async (result) => {
-      if (!result.accepted) return;
+      if (result.status !== "accepted") return;
       skills.add(result.skill);
       void kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
       sendToEngine({
@@ -412,12 +408,8 @@ export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecess
       seen.add(skillId);
       if (deps.personality.innateSkills.includes(skillId)) continue;
       if (deps.skills.has(skillId)) continue;
-      let skill: Skill;
-      try {
-        skill = await deps.kernel.storage.getSkill(skillId);
-      } catch {
-        continue;
-      }
+      const skill = await deps.kernel.storage.getSkill(skillId);
+      if (!skill) continue;
       deps.skills.add(skill);
       sendToEngine({
         kind: "EVENT",

@@ -26,8 +26,8 @@ export function createCrisisOrchestrator(env: Environment): CrisisOrchestrator {
           id: `${entry.type.toLowerCase()}_${nextSerial++}`,
           type: entry.type,
           description: entry.description,
-          startedAt: world.tick,
-          deadlineTick: world.tick + entry.deadlineTicks,
+          startedAtTick: world.tick,
+          deadlineTicks: entry.deadlineTicks,
           affectedAgents: aliveTargets,
         };
         due.push(crisis);

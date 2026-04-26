@@ -7,7 +7,7 @@ Hackathon: Open Agents. Target sponsor prizes: **0G (Storage + Compute)** and **
 **Status:** Design spec complete, nothing built yet. Full spec at `docs/superpowers/specs/2026-04-24-civilisation-emergence-design.md` — read it first.
 
 ---
-before diving deep into the codebase, always ask me what you are about to read and why. you have to be very minimal and avoid any overengineering or unnecessary things.
+before diving deep into the codebase, you have to be very minimal and avoid any overengineering or unnecessary things.
 
 DON'T GO THROUGH PROJECT STRUCTURE AND ARCHITECTURE AGAIN AND AGAIN
 DON'T do any git commit

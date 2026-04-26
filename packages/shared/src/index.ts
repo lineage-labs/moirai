@@ -6,3 +6,6 @@ export * from "./types/event.js";
 export * from "./types/world.js";
 export * from "./types/ipc.js";
 export * from "./types/ws.js";
+
+export * from "./types/receipt.js";
+export * from "./agent.js";

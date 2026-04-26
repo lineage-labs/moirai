@@ -327,7 +327,7 @@ function snapshot(world: WorldState): WorldState {
 }
 
 function crisisPayload(c: Crisis): Record<string, unknown> {
-  return { crisisId: c.id, type: c.type, description: c.description, affected: c.affectedAgents, deadlineTick: c.deadlineTick };
+  return { crisisId: c.id, type: c.type, description: c.description, affected: c.affectedAgents, deadlineTick: c.startedAtTick + c.deadlineTicks };
 }
 
 function domainEvent(type: EventType, tick: number, actorId: string, payload: Record<string, unknown>, receiptHash?: string): DomainEvent {

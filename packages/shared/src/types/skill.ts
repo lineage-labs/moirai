@@ -19,6 +19,8 @@ export type Skill = {
 };
 
 export type SkillCandidate = Omit<Skill, "id" | "provenance">;
+// Alias used by kernel-impl.
+export type CandidateSkill = SkillCandidate;
 
 export type SelfEvalResult = {
   score: number;

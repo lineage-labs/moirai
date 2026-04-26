@@ -38,3 +38,6 @@ export type DomainEvent = {
   payload: Record<string, unknown>;
   receiptHash?: string;
 };
+
+// Alias used by kernel-impl — both names refer to the same shape.
+export type Event = DomainEvent;

@@ -29,3 +29,8 @@ export type {
   EmitEvent,
   Substrate,
 } from "./kernel.js";
+
+export { EvolveError } from "./kernel.js";
+
+// Compatibility export path used by kernel-impl.
+export type { InferOpts, AxlInbound } from "./adapters/interfaces.js";

@@ -1,0 +1,60 @@
+# Three-node AXL mesh for axl-pubsub / Moirai integration tests.
+# 1) ./scripts/axl-keys.sh
+# 2) docker compose -f docker-compose.axl.yml up -d
+# Host API ports: 19002 (alice), 19012 (bob), 19022 (charlie) -> container :9002.
+# We deliberately avoid 9002 because the standalone AXL daemon installed by
+# the axl-pubsub README also binds to 127.0.0.1:9002. On macOS, a 127.0.0.1
+# binding wins over Docker's 0.0.0.0 publish for localhost traffic, which
+# silently routes our test traffic to the standalone daemon instead of the
+# mesh. The 19xxx range is reserved for this docker mesh only.
+
+services:
+  alice:
+    build:
+      context: ./docker/axl
+      dockerfile: Dockerfile
+    image: moirai-axl:local
+    container_name: moirai-axl-alice
+    hostname: alice
+    command: ["-config", "/configs/alice.json"]
+    volumes:
+      - ./docker/axl/configs:/configs:ro
+      - ./docker/axl/keys:/keys:ro
+    ports:
+      - "19002:9002"
+    networks:
+      - axlnet
+
+  bob:
+    image: moirai-axl:local
+    depends_on:
+      - alice
+    container_name: moirai-axl-bob
+    hostname: bob
+    command: ["-config", "/configs/bob.json"]
+    volumes:
+      - ./docker/axl/configs:/configs:ro
+      - ./docker/axl/keys:/keys:ro
+    ports:
+      - "19012:9002"
+    networks:
+      - axlnet
+
+  charlie:
+    image: moirai-axl:local
+    depends_on:
+      - alice
+    container_name: moirai-axl-charlie
+    hostname: charlie
+    command: ["-config", "/configs/charlie.json"]
+    volumes:
+      - ./docker/axl/configs:/configs:ro
+      - ./docker/axl/keys:/keys:ro
+    ports:
+      - "19022:9002"
+    networks:
+      - axlnet
+
+networks:
+  axlnet:
+    driver: bridge

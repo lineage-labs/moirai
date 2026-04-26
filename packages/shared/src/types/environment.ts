@@ -22,5 +22,5 @@ export type Environment = {
   resources: string[];
   topology: "open" | "ring" | "hub";
   crisisSchedule: CrisisScheduleEntry[];
-  hiddenRules: HiddenRule[];
+  hiddenRules?: HiddenRule[];
 };

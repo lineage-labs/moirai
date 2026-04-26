@@ -4,18 +4,27 @@
   "version": "0.0.0",
   "description": "Emergent civilisation: agents that evolve verifiable skills on 0G + AXL",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@9.12.0",
   "scripts": {
-    "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
     "dev": "pnpm --filter @moirai/engine dev",
     "smoke": "pnpm --filter @moirai/engine smoke",
-    "sim": "pnpm --filter @moirai/engine sim"
+    "sim": "pnpm --filter @moirai/engine sim",
+    "simulate:run": "bash ./scripts/simulate-run.sh",
+    "axl:mesh:keys": "bash ./scripts/axl-keys.sh",
+    "axl:mesh:up": "docker compose -f docker-compose.axl.yml up -d --build",
+    "axl:mesh:down": "docker compose -f docker-compose.axl.yml down"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
     "@types/node": "^20.14.10",
-    "tsx": "^4.16.2"
+    "turbo": "^2.0.0",
+    "tsx": "^4.16.2",
+    "vitest": "^1.6.0"
   }
 }

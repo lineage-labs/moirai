@@ -38,7 +38,7 @@ export class DevIpcNetworkAdapter implements INetworkAdapter {
     return () => this.handlers.delete(handler);
   }
 
-  async topology(): Promise<{ peerId: string }[]> {
-    return this.peers.map((peerId) => ({ peerId }));
+  async topology(): Promise<string[]> {
+    return [...this.peers];
   }
 }

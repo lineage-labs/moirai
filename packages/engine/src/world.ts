@@ -60,7 +60,7 @@ export function resolveCrisis(world: WorldState, crisisId: string): Crisis | und
 export function expireCrises(world: WorldState): Crisis[] {
   const expired: Crisis[] = [];
   world.activeCrises = world.activeCrises.filter((c) => {
-    if (world.tick > c.deadlineTick) {
+    if (world.tick > c.startedAtTick + c.deadlineTicks) {
       expired.push(c);
       return false;
     }

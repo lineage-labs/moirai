@@ -1,4 +1,4 @@
-import type { ComputeReceipt, DomainEvent, Skill } from "@moirai/shared";
+import type { DomainEvent, Receipt, Skill } from "@moirai/shared";
 
 export type InferOptions = {
   verifiable: boolean;
@@ -8,7 +8,7 @@ export type InferOptions = {
 
 export type InferResult = {
   text: string;
-  receipt: ComputeReceipt;
+  receipt: Receipt;
 };
 
 export interface IComputeAdapter {
@@ -18,10 +18,10 @@ export interface IComputeAdapter {
 export type PersistedEvent = DomainEvent & { eventId: string };
 
 export interface IStorageAdapter {
-  putSkill(skill: Skill): Promise<{ rootHash: string }>;
-  getSkill(rootHash: string): Promise<Skill>;
+  putSkill(skill: Skill): Promise<{ id: string }>;
+  getSkill(id: string): Promise<Skill | null>;
   listSkills(filter?: { minScore?: number }): Promise<Skill[]>;
-  appendEvent(event: DomainEvent): Promise<{ eventId: string }>;
+  appendEvent(event: DomainEvent): Promise<void>;
   putAgentInventory(agentId: string, skillIds: string[]): Promise<void>;
   getAgentInventory(agentId: string): Promise<string[]>;
   putAgentSocialGraph(agentId: string, memberIds: string[]): Promise<void>;
@@ -35,5 +35,5 @@ export interface INetworkAdapter {
   whisper(peerId: string, payload: unknown): Promise<void>;
   broadcast(payload: unknown): Promise<void>;
   subscribe(handler: PeerMessageHandler): () => void;
-  topology(): Promise<{ peerId: string }[]>;
+  topology(): Promise<string[]>;
 }
