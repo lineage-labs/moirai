@@ -2,40 +2,22 @@
 
 Emergent civilisation: agents evolve verifiable skills via **0G Compute** (sealed inference + receipts), persist them to **0G Storage**, and teach peers over **Gensyn AXL**.
 
-## Quickstart
+## Setup
 
 ```bash
 pnpm install
-pnpm build         # typecheck all packages
-pnpm dev           # start engine with 5 agents, dev-stub kernel
-pnpm sim           # terminal-only village simulation (no UI)
-pnpm smoke         # headless run, asserts demo event sequence
+pnpm build
 ```
 
-### Terminal simulation knobs
+Requires `.env` with `ZG_RPC_URL`, `ZG_PRIVATE_KEY`, `ZG_INDEXER_URL`.
 
-Run compact logs (default):
-
-```bash
-pnpm sim
-```
-
-Recommended hackathon demo run (clear narrative in terminal):
+## Run
 
 ```bash
-MOIRAI_MAX_TICKS=220 MOIRAI_TICK_MS=120 pnpm sim
-```
-
-Run full event stream:
-
-```bash
-pnpm sim -- --verbose
-```
-
-Common env overrides:
-
-```bash
-MOIRAI_MAX_TICKS=600 MOIRAI_TICK_MS=150 pnpm sim
+pnpm axl:mesh:keys   # generate per-agent keypairs (once)
+pnpm axl:mesh:up     # start 5-node AXL mesh
+pnpm sim             # run simulation
+pnpm axl:mesh:down   # stop the mesh
 ```
 
 ## Layout
@@ -43,17 +25,10 @@ MOIRAI_MAX_TICKS=600 MOIRAI_TICK_MS=150 pnpm sim
 ```
 packages/
 ├── shared/          types only
-├── kernel/          substrate + evolve() + adapter contracts (THIS IS A CONTRACT)
+├── kernel/          substrate + evolve() + adapter contracts
+├── kernel-impl/     real 0G Compute, 0G Storage, AXL adapters
 ├── personality/     declarative agent configs
 ├── environment/     declarative world configs + physics
 ├── engine/          tick loop, supervisor, crisis orchestrator, WS
 └── agent-runtime/   per-agent process; one OS process per agent
 ```
-
-## Status
-
-`engine`, `agent-runtime`, `personality`, `environment`, `shared` — implemented.
-
-`kernel` — **contract only**. Real adapters (`0g-compute`, `0g-storage`, `axl`) are skeletons that throw. Kernel team fills these in. Dev-stub adapters under `kernel/src/dev-stubs/` let the engine + agent-runtime run end-to-end today via `createDevKernel()`.
-
-See `packages/kernel/README.md` for the contract.

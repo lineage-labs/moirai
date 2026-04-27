@@ -6,6 +6,7 @@ Moirai is an agent-village simulation where autonomous LLM-backed agents live, s
 
 ---
  RUN
+  pnpm --filter @moirai/shared build && pnpm --filter @moirai/agent-runtime --filter @moirai/engine build
 # 1. Generate keys for all 5 nodes (skips existing ones)
   pnpm axl:mesh:keys
 

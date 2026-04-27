@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "dev": "pnpm --filter @moirai/engine dev",
     "smoke": "pnpm --filter @moirai/engine smoke",
-    "sim": "pnpm --filter @moirai/engine sim",
+    "sim": "pnpm --filter @moirai/engine sim-live",
     "simulate:run": "bash ./scripts/simulate-run.sh",
     "axl:mesh:keys": "bash ./scripts/axl-keys.sh",
     "axl:mesh:up": "docker compose -f docker-compose.axl.yml up -d --build",
