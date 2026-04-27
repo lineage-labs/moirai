@@ -188,8 +188,16 @@ export class ZeroGComputeAdapter implements IComputeAdapter {
   }
 
   private ledgerReady = false;
+  private lastSealedCallAt = 0;
+  private readonly minIntervalMs = 7_000; // 10 req/min → ~6s; 7s gives headroom
 
   private async sealedInfer(prompt: string, opts: InferOpts): Promise<InferResult> {
+    const now = Date.now();
+    const elapsed = now - this.lastSealedCallAt;
+    if (elapsed < this.minIntervalMs) {
+      await new Promise((r) => setTimeout(r, this.minIntervalMs - elapsed));
+    }
+    this.lastSealedCallAt = Date.now();
     if (!this.ledgerReady) {
       await this.ensureComputeLedgerAndInferenceFunds();
       this.ledgerReady = true;
