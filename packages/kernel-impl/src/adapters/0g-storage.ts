@@ -53,7 +53,9 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
   }
 
   async putSkill(skill: Skill): Promise<{ id: string }> {
-    return withRetries(() => this.putSkillOnce(skill), this.maxRetries, this.initialBackoffMs);
+    // No retries — retrying with the same nonce causes "replacement underpriced".
+    // If the first attempt fails, the caller falls back to local storage.
+    return this.putSkillOnce(skill);
   }
 
   async getSkill(id: string): Promise<Skill | null> {
@@ -132,11 +134,28 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
   private async putSkillOnce(skill: Skill): Promise<{ id: string }> {
     const indexer = this.getIndexer();
     const signer = await this.getSigner();
-    const bytes = new TextEncoder().encode(JSON.stringify(skill));
+    // 0G testnet Flow contract rejects multi-chunk submissions (height>0, i.e. data>256 bytes).
+    // Use short keys to keep the wire payload under 256 bytes. downloadSkill reconstructs the full Skill.
+    // Pass explicit gasLimit so ethers skips eth_estimateGas (0G testnet estimateGas is unreliable).
+    const wire = {
+      i: skill.id,
+      n: skill.name,
+      e: skill.effect.slice(0, 60),
+      b: skill.provenance.inventedBy,
+      at: skill.provenance.inventedAt,
+      rr: skill.provenance.reasonReceipt.slice(0, 8),
+      sr: skill.provenance.selfEvalReceipt.slice(0, 8),
+      ss: skill.provenance.selfEvalScore,
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(wire));
     const data = new MemData(bytes);
     try {
       // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
-      const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
+      const [result, err] = await indexer.upload(
+        data, this.cfg.rpcUrl, signer as never,
+        undefined, undefined,
+        { gasLimit: BigInt(5_000_000) },
+      );
       if (err) throw err;
       if (!result?.rootHash) throw new Error("0G Storage upload returned no rootHash");
       this.skillRoots.set(skill.id, result.rootHash);
@@ -144,10 +163,13 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
       return { id: skill.id };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // Extract tx hash when the transaction was submitted but reverted on-chain.
+      const txHash = (e as { receipt?: { hash?: string } })?.receipt?.hash;
       try {
         const bal = await signer.provider!.getBalance(signer.address);
+        const txNote = txHash ? `  tx=${txHash}` : "";
         console.error(
-          `[ZeroGStorageAdapter] putSkill failed for ${skill.id} (${signer.address}): ${msg}. Native balance: ${ethers.formatEther(bal)} (need fee+gas; pair ZG_RPC_URL with matching ZG_INDEXER_URL).`,
+          `[ZeroGStorageAdapter] putSkill failed for ${skill.id} (${signer.address}):${txNote} ${msg}. Native balance: ${ethers.formatEther(bal)} (need fee+gas; pair ZG_RPC_URL with matching ZG_INDEXER_URL).`,
         );
       } catch {
         console.error(`[ZeroGStorageAdapter] putSkill failed for ${skill.id}: ${msg}`);
@@ -160,7 +182,11 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     const indexer = this.getIndexer();
     const signer = await this.getSigner();
     const bytes = new TextEncoder().encode(JSON.stringify(data));
-    const [result, err] = await indexer.upload(new MemData(bytes), this.cfg.rpcUrl, signer as never);
+    const [result, err] = await indexer.upload(
+      new MemData(bytes), this.cfg.rpcUrl, signer as never,
+      undefined, undefined,
+      { gasLimit: BigInt(5_000_000) },
+    );
     if (err) throw err;
     if (!result?.rootHash) throw new Error("0G Storage uploadBlob returned no rootHash");
     return result.rootHash;
@@ -186,8 +212,26 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     try {
       const err = await indexer.download(rootHash, filePath, false);
       if (err) throw err;
-      const text = await readFile(filePath, "utf8");
-      const skill = JSON.parse(text) as Skill;
+      const wire = JSON.parse(await readFile(filePath, "utf8")) as {
+        i: string; n: string; e: string; b: string;
+        at: number; rr: string; sr: string; ss: number;
+      };
+      const skill: Skill = {
+        id: wire.i,
+        name: wire.n,
+        effect: wire.e,
+        description: "",
+        preconditions: [],
+        steps: [],
+        provenance: {
+          inventedBy: wire.b,
+          inventedAt: wire.at,
+          bornFrom: [],
+          reasonReceipt: wire.rr,
+          selfEvalReceipt: wire.sr,
+          selfEvalScore: wire.ss,
+        },
+      };
       this.skillCache.set(skill.id, skill);
       return skill;
     } finally {

@@ -176,8 +176,9 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
     case EventType.SKILL_ACCEPTED: {
       stats.skillsMade++;
       const name = pl.name ?? (pl.skill as Record<string, unknown> | undefined)?.name ?? String(pl.skillId ?? "?");
+      const stored = (pl.storedLocal as boolean | undefined) ? "stored → local fallback" : "stored → 0G Storage";
       label("0G", tick, actor,
-        `${C.green}✓ accepted${C.reset}  ${C.bold}${String(name)}${C.reset}  stored → 0G Storage${receipt(e.receiptHash)}`);
+        `${C.green}✓ accepted${C.reset}  ${C.bold}${String(name)}${C.reset}  ${stored}${receipt(e.receiptHash)}`);
       break;
     }
     case EventType.SKILL_REJECTED: {
@@ -200,13 +201,9 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
       label("AXL", tick, actor, `→ ${to}  ${C.dim}${String(kind)}${detail}${C.reset}`);
       break;
     }
-    case EventType.SKILL_TAUGHT: {
-      stats.axlMsgs++;
-      const to = String(pl.to ?? "peer");
-      const name = String(pl.skillName ?? pl.name ?? "?");
-      label("AXL", tick, actor, `→ whisper→${to}  TEACH: ${name}`);
+    case EventType.SKILL_TAUGHT:
+      // Suppressed — AXL_BROADCAST already logs this with the skill name
       break;
-    }
     case EventType.SKILL_LEARNED: {
       const from = String(pl.from ?? pl.peerId ?? "peer");
       const name = String(pl.skillName ?? pl.name ?? "?");
@@ -290,7 +287,7 @@ async function main(): Promise<void> {
   const config = loadConfig({
     ...process.env,
     MOIRAI_TICK_MS:  "250",
-    MOIRAI_MAX_TICKS: "200",
+    MOIRAI_MAX_TICKS: "220",
     MOIRAI_WS_PORT:  "0",
     MOIRAI_EPISODE_DIR: "/tmp/moirai-live-episodes",
     MOIRAI_RESUME: resume ? "true" : "false",

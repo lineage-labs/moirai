@@ -123,16 +123,18 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     },
   };
 
+  let storedLocal = false;
   try {
     await storage.putSkill(skill);
   } catch {
     await localPutSkill(skill);
+    storedLocal = true;
     process.stderr.write(`[evolve] 0G storage unavailable — skill ${skill.id} written to local fallback\n`);
   }
 
   emit({
     type: EventType.SKILL_ACCEPTED,
-    payload: { skill },
+    payload: { skill, ...(storedLocal ? { storedLocal: true } : {}) },
   });
 
   return { status: "accepted", skill };

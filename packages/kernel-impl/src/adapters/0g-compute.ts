@@ -35,6 +35,28 @@ type ResolvedService = {
 /** Matches `LedgerProcessor.MIN_LEDGER_BALANCE_OG` in `@0glabs/0g-serving-broker`. */
 const MIN_LEDGER_OG = 3;
 
+// Shared across all ZeroGComputeAdapter instances — 0G Compute enforces 10 req/min globally.
+const globalRateLimit = (() => {
+  const MIN_INTERVAL_MS = 7_000; // 6s exact; 7s gives headroom
+  let lastAt = 0;
+  let queue = Promise.resolve();
+  return {
+    acquire(): Promise<void> {
+      queue = queue.then(
+        () =>
+          new Promise<void>((resolve) => {
+            const wait = MIN_INTERVAL_MS - (Date.now() - lastAt);
+            setTimeout(() => {
+              lastAt = Date.now();
+              resolve();
+            }, Math.max(0, wait));
+          }),
+      );
+      return queue;
+    },
+  };
+})();
+
 export class ZeroGComputeAdapter implements IComputeAdapter {
   private brokerPromise: Promise<ZGComputeNetworkBroker> | null = null;
   private readonly acknowledged = new Set<string>();
@@ -188,16 +210,9 @@ export class ZeroGComputeAdapter implements IComputeAdapter {
   }
 
   private ledgerReady = false;
-  private lastSealedCallAt = 0;
-  private readonly minIntervalMs = 7_000; // 10 req/min → ~6s; 7s gives headroom
 
   private async sealedInfer(prompt: string, opts: InferOpts): Promise<InferResult> {
-    const now = Date.now();
-    const elapsed = now - this.lastSealedCallAt;
-    if (elapsed < this.minIntervalMs) {
-      await new Promise((r) => setTimeout(r, this.minIntervalMs - elapsed));
-    }
-    this.lastSealedCallAt = Date.now();
+    await globalRateLimit.acquire();
     if (!this.ledgerReady) {
       await this.ensureComputeLedgerAndInferenceFunds();
       this.ledgerReady = true;

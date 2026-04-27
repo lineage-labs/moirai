@@ -1,8 +1,10 @@
 import type { AgentInWorld, AgentNeeds, Crisis, WorldState } from "@moirai/shared";
 
-const HUNGER_CRISIS_THRESHOLD = 75;
+// Needs crises disabled — they fire too frequently and exhaust the 0G rate limit.
+// Only scheduled crises (LION etc.) use 0G Compute.
+const HUNGER_CRISIS_THRESHOLD = 101;  // unreachable (max is 100)
 const HUNGER_CRISIS_CLEAR = 55;
-const ENERGY_CRISIS_THRESHOLD = 15;
+const ENERGY_CRISIS_THRESHOLD = -1;   // unreachable (min is 0)
 const ENERGY_CRISIS_CLEAR = 30;
 const NEEDS_CRISIS_DEADLINE = 200;
 

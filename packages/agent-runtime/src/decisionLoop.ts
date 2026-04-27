@@ -73,12 +73,8 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
   } catch {
     await localPutInventory(agentId, skillIds);
   }
-  await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id });
-  sendToEngine({ kind: "PEER_BROADCAST", payload: { kind: "TEACH", skillId: result.skill.id } });
-  sendToEngine({
-    kind: "EVENT",
-    event: { type: EventType.SKILL_TAUGHT, tick, actorId: agentId, payload: { skillId: result.skill.id, to: "*", skill: result.skill } },
-  });
+  await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id, skillName: result.skill.name });
+  sendToEngine({ kind: "PEER_BROADCAST", payload: { kind: "TEACH", skillId: result.skill.id, skillName: result.skill.name } });
   sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: result.skill.id, crisisId: crisis.id } });
 }
 
@@ -137,14 +133,19 @@ export async function handlePeerMessage(
   }
 
   skills.add(skill);
-  await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+  const peerSkillIds = skills.all().map((s) => s.id);
+  try {
+    await kernel.storage.putAgentInventory(agentId, peerSkillIds);
+  } catch {
+    await localPutInventory(agentId, peerSkillIds);
+  }
   sendToEngine({
     kind: "EVENT",
-    event: { type: EventType.SKILL_ACCEPTED_FROM_PEER, tick, actorId: agentId, payload: { skillId, from: msg.from } },
+    event: { type: EventType.SKILL_ACCEPTED_FROM_PEER, tick, actorId: agentId, payload: { skillId, skillName: skill.name, from: msg.from } },
   });
   sendToEngine({
     kind: "EVENT",
-    event: { type: EventType.SKILL_LEARNED, tick, actorId: agentId, payload: { skillId, from: msg.from, skill } },
+    event: { type: EventType.SKILL_LEARNED, tick, actorId: agentId, payload: { skillId, skillName: skill.name, from: msg.from, skill } },
   });
 }
 
