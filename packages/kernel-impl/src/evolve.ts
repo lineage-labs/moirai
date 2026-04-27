@@ -11,6 +11,7 @@ import { EvolveError } from "@moirai/kernel";
 import { buildReasonPrompt, buildSelfEvalPrompt } from "./prompts.js";
 import { computeSkillId } from "./skill-id.js";
 import { parseCandidate, parseEval } from "./parse.js";
+import { localPutSkill } from "./localFallback.js";
 
 const BASE_THRESHOLD = 0.6;
 
@@ -122,7 +123,12 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     },
   };
 
-  await storage.putSkill(skill);
+  try {
+    await storage.putSkill(skill);
+  } catch {
+    await localPutSkill(skill);
+    process.stderr.write(`[evolve] 0G storage unavailable — skill ${skill.id} written to local fallback\n`);
+  }
 
   emit({
     type: EventType.SKILL_ACCEPTED,

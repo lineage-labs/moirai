@@ -1,9 +1,16 @@
 import type { Crisis, Environment, WorldState } from "@moirai/shared";
 
+const FIELD_W = 100;
+const FIELD_H = 60;
+const DEFAULT_RADIUS = 35;
+
 export type CrisisOrchestrator = {
-  /** Returns crises that just started this tick. */
   step(world: WorldState): Crisis[];
 };
+
+function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
 
 export function createCrisisOrchestrator(env: Environment): CrisisOrchestrator {
   let nextSerial = 1;
@@ -18,9 +25,26 @@ export function createCrisisOrchestrator(env: Environment): CrisisOrchestrator {
         if (entry.tick !== world.tick) continue;
         fired.add(i);
 
-        const targetIds = entry.targets ?? Object.values(world.agents).filter((a) => a.alive).slice(0, 2).map((a) => a.id);
-        const aliveTargets = targetIds.filter((id) => world.agents[id]?.alive);
-        if (aliveTargets.length === 0) continue;
+        const position = entry.position ?? {
+          x: Math.random() * FIELD_W,
+          y: Math.random() * FIELD_H,
+        };
+        const radius = entry.radius ?? DEFAULT_RADIUS;
+
+        const alreadyFacing = new Set(
+          world.activeCrises
+            .filter((c) => c.type === entry.type)
+            .flatMap((c) => c.affectedAgents),
+        );
+
+        const candidates = (entry.targets
+          ? entry.targets.filter((id) => world.agents[id]?.alive)
+          : Object.values(world.agents)
+              .filter((a) => a.alive && dist(a.position, position) <= radius)
+              .map((a) => a.id)
+        ).filter((id) => !alreadyFacing.has(id));
+
+        if (candidates.length === 0) continue;
 
         const crisis: Crisis = {
           id: `${entry.type.toLowerCase()}_${nextSerial++}`,
@@ -28,7 +52,8 @@ export function createCrisisOrchestrator(env: Environment): CrisisOrchestrator {
           description: entry.description,
           startedAtTick: world.tick,
           deadlineTicks: entry.deadlineTicks,
-          affectedAgents: aliveTargets,
+          affectedAgents: candidates,
+          position,
         };
         due.push(crisis);
       }

@@ -1,5 +1,11 @@
 import type { AgentInWorld, AgentNeeds, Crisis, WorldState } from "@moirai/shared";
 
+const HUNGER_CRISIS_THRESHOLD = 75;
+const HUNGER_CRISIS_CLEAR = 55;
+const ENERGY_CRISIS_THRESHOLD = 15;
+const ENERGY_CRISIS_CLEAR = 30;
+const NEEDS_CRISIS_DEADLINE = 200;
+
 const FIELD_W = 100;
 const FIELD_H = 60;
 const INITIAL_FOOD_POOL = 200;
@@ -7,24 +13,40 @@ const FORAGE_YIELD = 5;
 const FARM_YIELD = 2;
 const FOOD_POOL_REGEN = 1;
 
-const INITIAL_NEEDS: AgentNeeds = { hunger: 20, energy: 80, curiosity: 30 };
-
 export function createWorld(): WorldState {
   return { tick: 0, agents: {}, activeCrises: [], foodPool: INITIAL_FOOD_POOL };
 }
 
 export function spawnAgent(world: WorldState, agentId: string, personalityId: string): AgentInWorld {
+  // Spread starting needs so agents hit thresholds at different times
+  const hunger = 5 + Math.random() * 35;   // 5–40, well below HUNGER_CRISIS_THRESHOLD=75
+  const energy = 55 + Math.random() * 35;  // 55–90, well above ENERGY_CRISIS_THRESHOLD=15
   const agent: AgentInWorld = {
     id: agentId,
     personalityId,
     position: randomPosition(),
     alive: true,
-    needs: { ...INITIAL_NEEDS },
-    food: 50,
+    needs: { hunger, energy, curiosity: 20 + Math.random() * 40 },
+    food: 30 + Math.floor(Math.random() * 40),
     inventory: ["rocks", "sticks"],
   };
   world.agents[agentId] = agent;
   return agent;
+}
+
+/** Remove agentId from every active crisis. Returns crises that now have zero affected agents. */
+export function cleanupAgentCrises(world: WorldState, agentId: string): Crisis[] {
+  const emptied: Crisis[] = [];
+  world.activeCrises = world.activeCrises.filter((c) => {
+    if (!c.affectedAgents.includes(agentId)) return true;
+    c.affectedAgents = c.affectedAgents.filter((id) => id !== agentId);
+    if (c.affectedAgents.length === 0) {
+      emptied.push(c);
+      return false;
+    }
+    return true;
+  });
+  return emptied;
 }
 
 export function killAgent(world: WorldState, agentId: string): void {
@@ -51,10 +73,16 @@ export function startCrisis(world: WorldState, crisis: Crisis): void {
   world.activeCrises.push(crisis);
 }
 
-export function resolveCrisis(world: WorldState, crisisId: string): Crisis | undefined {
-  const idx = world.activeCrises.findIndex((c) => c.id === crisisId);
-  if (idx === -1) return undefined;
-  return world.activeCrises.splice(idx, 1)[0];
+/** Remove agentId from crisis. Returns the crisis only when it is fully resolved (no affected agents left). */
+export function resolveCrisis(world: WorldState, crisisId: string, agentId: string): Crisis | undefined {
+  const crisis = world.activeCrises.find((c) => c.id === crisisId);
+  if (!crisis) return undefined;
+  crisis.affectedAgents = crisis.affectedAgents.filter((id) => id !== agentId);
+  if (crisis.affectedAgents.length === 0) {
+    world.activeCrises = world.activeCrises.filter((c) => c.id !== crisisId);
+    return crisis;
+  }
+  return undefined;
 }
 
 export function expireCrises(world: WorldState): Crisis[] {
@@ -100,7 +128,68 @@ export function decayAgentNeeds(world: WorldState, agentId: string): void {
   } else {
     a.needs.hunger = Math.min(100, a.needs.hunger + 3);
   }
+  a.needs.energy = Math.max(0, a.needs.energy - 0.25);
   a.needs.curiosity = Math.min(100, a.needs.curiosity + 1);
+}
+
+export function checkNeedsThresholds(world: WorldState, agentId: string): {
+  newCrises: Crisis[];
+  resolvedCrisisIds: string[];
+} {
+  const a = world.agents[agentId];
+  if (!a?.alive) return { newCrises: [], resolvedCrisisIds: [] };
+
+  // Don't pile needs crises on top of an already-active non-needs crisis
+  const hasBlockingCrisis = world.activeCrises.some(
+    (c) => c.affectedAgents.includes(agentId) && c.type !== "HUNGER" && c.type !== "LOW_ENERGY",
+  );
+  if (hasBlockingCrisis) return { newCrises: [], resolvedCrisisIds: [] };
+
+  const newCrises: Crisis[] = [];
+  const resolvedCrisisIds: string[] = [];
+
+  const activeHunger = world.activeCrises.find(
+    (c) => c.type === "HUNGER" && c.affectedAgents.includes(agentId),
+  );
+  const activeEnergy = world.activeCrises.find(
+    (c) => c.type === "LOW_ENERGY" && c.affectedAgents.includes(agentId),
+  );
+
+  if (a.needs.hunger >= HUNGER_CRISIS_THRESHOLD && !activeHunger) {
+    const crisis: Crisis = {
+      id: `hunger_${agentId}_${world.tick}`,
+      type: "HUNGER",
+      description: "Agent has exceeded critical hunger threshold — physiological crisis",
+      startedAtTick: world.tick,
+      deadlineTicks: NEEDS_CRISIS_DEADLINE,
+      affectedAgents: [agentId],
+    };
+    world.activeCrises.push(crisis);
+    newCrises.push(crisis);
+  } else if (activeHunger && a.needs.hunger < HUNGER_CRISIS_CLEAR) {
+    const idx = world.activeCrises.indexOf(activeHunger);
+    if (idx !== -1) world.activeCrises.splice(idx, 1);
+    resolvedCrisisIds.push(activeHunger.id);
+  }
+
+  if (a.needs.energy <= ENERGY_CRISIS_THRESHOLD && !activeEnergy) {
+    const crisis: Crisis = {
+      id: `energy_${agentId}_${world.tick}`,
+      type: "LOW_ENERGY",
+      description: "Agent has exceeded critical fatigue threshold — energy depletion crisis",
+      startedAtTick: world.tick,
+      deadlineTicks: NEEDS_CRISIS_DEADLINE,
+      affectedAgents: [agentId],
+    };
+    world.activeCrises.push(crisis);
+    newCrises.push(crisis);
+  } else if (activeEnergy && a.needs.energy > ENERGY_CRISIS_CLEAR) {
+    const idx = world.activeCrises.indexOf(activeEnergy);
+    if (idx !== -1) world.activeCrises.splice(idx, 1);
+    resolvedCrisisIds.push(activeEnergy.id);
+  }
+
+  return { newCrises, resolvedCrisisIds };
 }
 
 export function applyRestEffect(world: WorldState, agentId: string): void {

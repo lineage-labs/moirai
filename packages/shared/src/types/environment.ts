@@ -4,6 +4,8 @@ export type CrisisScheduleEntry = {
   description: string;
   targets?: string[];
   deadlineTicks: number;
+  position?: { x: number; y: number };
+  radius?: number;
 };
 
 export type HiddenRule = {

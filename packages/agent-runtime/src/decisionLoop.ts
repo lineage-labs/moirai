@@ -9,6 +9,7 @@ import {
 } from "@moirai/shared";
 import { sendToEngine } from "./parentIpc.js";
 import type { SkillSet } from "./skillSet.js";
+import { localGetSkill, localGetInventory, localPutInventory } from "./localFallback.js";
 
 type TeachPayload = { kind: "TEACH"; skillId: string };
 type DeathWarningPayload = { kind: "DEATH_WARNING"; crisisType: string; crisisDescription: string };
@@ -20,6 +21,7 @@ export type DecisionDeps = {
   kernel: Kernel;
   skills: SkillSet;
   crisisCautions: Map<string, string>; // crisisType → caution note injected into evolve prompt
+  me?: AgentInWorld;
 };
 
 function isTeachPayload(x: unknown): x is TeachPayload {
@@ -30,7 +32,8 @@ function isDeathWarning(x: unknown): x is DeathWarningPayload {
   return typeof x === "object" && x !== null && (x as { kind?: unknown }).kind === "DEATH_WARNING";
 }
 
-export function handleTick(_deps: DecisionDeps, _tick: number, me: AgentInWorld, _nearby: AgentInWorld[]): void {
+export function handleTick(deps: DecisionDeps, _tick: number, me: AgentInWorld, _nearby: AgentInWorld[]): void {
+  deps.me = me;
   if (me.food <= 20 || me.needs.hunger >= 50) {
     sendToEngine({ kind: "ACTION", action: { kind: "FORAGE" } });
   } else {
@@ -57,14 +60,19 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
     tick,
     situation,
     crisis,
-    inventory: [],
+    inventory: deps.me?.inventory ?? [],
     knownSkills: skills.all(),
   });
 
   if (result.status !== "accepted") return;
 
   skills.add(result.skill);
-  await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
+  const skillIds = skills.all().map((s) => s.id);
+  try {
+    await kernel.storage.putAgentInventory(agentId, skillIds);
+  } catch {
+    await localPutInventory(agentId, skillIds);
+  }
   await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id });
   sendToEngine({
     kind: "EVENT",
@@ -95,7 +103,7 @@ export async function handlePeerMessage(
   const { skillId } = msg.payload;
   if (skills.has(skillId)) return;
 
-  const skill = await kernel.storage.getSkill(skillId);
+  const skill = (await kernel.storage.getSkill(skillId)) ?? (await localGetSkill(skillId));
   if (!skill) return;
 
   // Personality filter: does this skill fit who I am?
@@ -131,6 +139,10 @@ export async function handlePeerMessage(
   await kernel.storage.putAgentInventory(agentId, skills.all().map((s) => s.id));
   sendToEngine({
     kind: "EVENT",
+    event: { type: EventType.SKILL_ACCEPTED_FROM_PEER, tick, actorId: agentId, payload: { skillId, from: msg.from } },
+  });
+  sendToEngine({
+    kind: "EVENT",
     event: { type: EventType.SKILL_LEARNED, tick, actorId: agentId, payload: { skillId, from: msg.from, skill } },
   });
 }
@@ -140,7 +152,8 @@ export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecess
 
   const seen = new Set<string>();
   for (const predecessorId of predecessorIds) {
-    const ids = await deps.kernel.storage.getAgentInventory(predecessorId);
+    let ids = await deps.kernel.storage.getAgentInventory(predecessorId);
+    if (ids.length === 0) ids = await localGetInventory(predecessorId);
     for (const skillId of ids) {
       if (seen.has(skillId) || deps.skills.has(skillId)) continue;
       seen.add(skillId);

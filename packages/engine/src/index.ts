@@ -19,6 +19,8 @@ import { BrowserBridge } from "./wsServer.js";
 import { loadLatestEpisode, nextEpisodeId, saveEpisode, type EpisodeSnapshot } from "./episodePersistence.js";
 import {
   applyRestEffect,
+  checkNeedsThresholds,
+  cleanupAgentCrises,
   createWorld,
   decayAgentNeeds,
   expireCrises,
@@ -64,7 +66,10 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
 
   const supervisor = new Supervisor({
     onMessage: (agentId, msg) => handleAgentMessage(agentId, msg),
-    onExit: (agentId) => peerRouter.unregister(agentId),
+    onExit: (agentId) => {
+      peerRouter.unregister(agentId);
+      evolvingAgents.delete(agentId); // crashed process = inference failed; let crisis expiry kill the agent
+    },
   });
 
   const personalityById: Record<string, string> = {};
@@ -94,6 +99,34 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
     browser.send({ kind: "WORLD", state: snapshot(world) });
   }
 
+  function broadcastDeath(agentId: string, reason: string, crises: Crisis[]): void {
+    killAgent(world, agentId);
+    bus.emit(domainEvent(EventType.AGENT_DIED, world.tick, agentId, { reason, crisisTypes: crises.map((c) => c.type) }));
+    supervisor.send(agentId, { kind: "SHUTDOWN" });
+    for (const crisis of crises) {
+      for (const [peerId, peer] of Object.entries(world.agents)) {
+        if (peerId !== agentId && peer.alive) {
+          supervisor.send(peerId, {
+            kind: "PEER_MESSAGE",
+            from: agentId,
+            payload: { kind: "DEATH_WARNING", crisisType: crisis.type, crisisDescription: crisis.description },
+          });
+        }
+      }
+    }
+    evolvingAgents.delete(agentId);
+    // Purge this agent from all remaining active crises so they can't re-trigger on them
+    const nowEmpty = cleanupAgentCrises(world, agentId);
+    for (const c of nowEmpty) {
+      bus.emit(domainEvent(EventType.CRISIS_EXPIRED, world.tick, "engine", {
+        crisisId: c.id,
+        type: c.type,
+        affectedAgents: [...c.affectedAgents, agentId],
+        casualties: [agentId],
+      }));
+    }
+  }
+
   function tick(): void {
     if (stopping) return;
     world.tick++;
@@ -107,51 +140,48 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       }
     }
 
+    const diedThisTick: string[] = [];
+
+    // Expire crises — kill all affected agents who failed to resolve in time
     for (const expired of expireCrises(world)) {
-      bus.emit(
-        domainEvent(EventType.CRISIS_RESOLVED, world.tick, "engine", {
-          crisisId: expired.id,
-          outcome: "expired",
-        }),
-      );
+      const stillAlive = expired.affectedAgents.filter((id) => world.agents[id]?.alive);
+      for (const affectedId of stillAlive) {
+        if (evolvingAgents.has(affectedId)) continue; // mid-infer: spare this tick
+        broadcastDeath(affectedId, "crisis_expired", [expired]);
+        diedThisTick.push(affectedId);
+      }
+      bus.emit(domainEvent(EventType.CRISIS_EXPIRED, world.tick, "engine", {
+        crisisId: expired.id,
+        type: expired.type,
+        affectedAgents: expired.affectedAgents,
+        casualties: stillAlive,
+      }));
     }
 
     replenishFoodPool(world);
-
-    const diedThisTick: string[] = [];
 
     for (const a of Object.values(world.agents)) {
       if (!a.alive) continue;
 
       decayAgentNeeds(world, a.id);
 
-      const forced = config.forcedDeaths.find((d) => d.agentId === a.id && d.tick === world.tick);
-      if ((forced || a.needs.hunger >= 100) && !evolvingAgents.has(a.id)) {
-        killAgent(world, a.id);
-        bus.emit(
-          domainEvent(EventType.AGENT_DIED, world.tick, a.id, {
-            reason: forced ? "forced" : "hunger",
-          }),
-        );
-        supervisor.send(a.id, { kind: "SHUTDOWN" });
+      // Hunger / energy thresholds → internal crises
+      const { newCrises, resolvedCrisisIds } = checkNeedsThresholds(world, a.id);
+      for (const c of newCrises) {
+        bus.emit(domainEvent(EventType.CRISIS_STARTED, world.tick, "engine", crisisPayload(c)));
+        supervisor.send(a.id, { kind: "CRISIS", tick: world.tick, crisis: c });
+      }
+      for (const crisisId of resolvedCrisisIds) {
+        bus.emit(domainEvent(EventType.CRISIS_RESOLVED, world.tick, a.id, { crisisId, outcome: "needs_recovered" }));
+      }
 
-        // Warn all alive peers about which crises this agent faced when it died
-        for (const crisis of world.activeCrises.filter((c) => c.affectedAgents.includes(a.id))) {
-          for (const [peerId, peer] of Object.entries(world.agents)) {
-            if (peerId !== a.id && peer.alive) {
-              supervisor.send(peerId, {
-                kind: "PEER_MESSAGE",
-                from: a.id,
-                payload: { kind: "DEATH_WARNING", crisisType: crisis.type, crisisDescription: crisis.description },
-              });
-            }
-          }
-        }
-        evolvingAgents.delete(a.id);
+      const forced = config.forcedDeaths.find((d) => d.agentId === a.id && d.tick === world.tick);
+      if (forced && !evolvingAgents.has(a.id)) {
+        const activeCrises = world.activeCrises.filter((c) => c.affectedAgents.includes(a.id));
+        broadcastDeath(a.id, "forced", activeCrises);
         diedThisTick.push(a.id);
       } else {
-        const view = nearbyAgents(world, a.id);
-        supervisor.send(a.id, { kind: "TICK", tick: world.tick, me: a, nearby: view });
+        supervisor.send(a.id, { kind: "TICK", tick: world.tick, me: a, nearby: nearbyAgents(world, a.id) });
       }
     }
 
@@ -198,15 +228,13 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       }
 
       case "PEER_SEND": {
-        bus.emit(
-          domainEvent(EventType.AXL_MESSAGE, world.tick, agentId, { to: msg.to, payload: msg.payload }),
-        );
+        bus.emit(domainEvent(EventType.AXL_WHISPER, world.tick, agentId, { to: msg.to, payload: msg.payload }));
         peerRouter.whisper(agentId, msg.to, msg.payload);
         return;
       }
 
       case "PEER_BROADCAST": {
-        bus.emit(domainEvent(EventType.AXL_MESSAGE, world.tick, agentId, { to: "*", payload: msg.payload }));
+        bus.emit(domainEvent(EventType.AXL_BROADCAST, world.tick, agentId, { payload: msg.payload }));
         peerRouter.broadcast(agentId, msg.payload);
         return;
       }
@@ -229,8 +257,9 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         const skill = skillCache.get(action.skillId);
         const crisis = world.activeCrises.find((c) => c.id === action.crisisId);
         if (!skill || !crisis) return;
+        bus.emit(domainEvent(EventType.AGENT_ACTION, world.tick, agentId, { action: "APPLY_SKILL", skillId: skill.id, skillName: skill.name, crisisId: crisis.id }));
         if (skillResolvesCrisis(skill, crisis, env)) {
-          resolveCrisis(world, crisis.id);
+          resolveCrisis(world, crisis.id, agentId);
           bus.emit(
             domainEvent(EventType.CRISIS_RESOLVED, world.tick, agentId, {
               crisisId: crisis.id,
@@ -254,6 +283,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       }
       case "REST":
         applyRestEffect(world, agentId);
+        bus.emit(domainEvent(EventType.AGENT_ACTION, world.tick, agentId, { action: "REST" }));
         return;
       case "SOCIALIZE":
       case "EXPERIMENT":
