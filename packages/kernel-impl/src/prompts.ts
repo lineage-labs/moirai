@@ -29,11 +29,12 @@ export function buildReasonPrompt(input: ReasonPromptInput): string {
 }
 
 export type SelfEvalPromptInput = {
-  environment: Pick<Environment, "physics">;
+  environment: Pick<Environment, "physics" | "resources">;
   candidate: CandidateSkill;
   situation: string;
   crisis?: Crisis;
   personality?: Personality;
+  inventory: string[];
 };
 
 export function buildSelfEvalPrompt(input: SelfEvalPromptInput): string {
@@ -42,10 +43,12 @@ export function buildSelfEvalPrompt(input: SelfEvalPromptInput): string {
     `Evaluate the proposed skill against world physics and the situation.`,
     fragment,
     `World physics: ${input.environment.physics.join("; ")}.`,
+    `World resources: ${input.environment.resources.join(", ")}.`,
+    `Agent carries: ${input.inventory.join(", ") || "(nothing)"}.`,
     `Situation: ${input.situation}`,
     input.crisis ? `Crisis: ${input.crisis.description}.` : "",
     `Proposed skill:\nname: ${input.candidate.name}\ndescription: ${input.candidate.description}\neffect: ${input.candidate.effect}\nsteps:\n- ${input.candidate.steps.join("\n- ")}`,
-    `Respond as JSON: { score: number (0..1), failureModes: string[] }.`,
+    `Score = (physical likelihood of success) × (fit with your character and traits). A skill that violates your values or personality must score low even if it would physically work. Respond as JSON: { score: number (0..1), failureModes: string[] }.`,
   ]
     .filter(Boolean)
     .join("\n\n");

@@ -105,6 +105,9 @@ function setupEnv(): void {
   process.env.MOIRAI_KERNEL_MODE   = "prod";
   process.env.MOIRAI_KERNEL_MODULE = PROD_KERNEL_MODULE;
 
+  // Isolate local skill storage per run so previous runs' skills don't bleed into inheritance
+  process.env.MOIRAI_DEV_STORAGE = `/tmp/moirai-live-${Date.now()}`;
+
   // Per-agent AXL URLs (alice→node1, bob→node2, all others→node3)
   process.env.MOIRAI_AXL_URL_alice   = AXL_URLS[0];
   process.env.MOIRAI_AXL_URL_bob     = AXL_URLS[1];
@@ -196,9 +199,15 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
       const to   = pl.to ? `whisper→${String(pl.to)}` : "broadcast";
       const body = pl.payload as Record<string, unknown> | undefined;
       const kind = body?.kind ?? body?.type ?? "msg";
-      const sname = body?.skillName ?? (body?.skill as Record<string, unknown> | undefined)?.name ?? "";
-      const detail = sname ? `  ${String(sname)}` : "";
-      label("AXL", tick, actor, `→ ${to}  ${C.dim}${String(kind)}${detail}${C.reset}`);
+      let detail = "";
+      if (body?.kind === "DEATH_WARNING") {
+        const modes = (body.failureModes as string[] | undefined)?.slice(0, 2).join("; ") ?? "";
+        detail = `  ${C.red}${String(body.crisisType ?? "?")}${C.reset}  ${C.dim}${String(body.crisisDescription ?? "")}${modes ? `  [${modes}]` : ""}${C.reset}`;
+      } else {
+        const sname = body?.skillName ?? (body?.skill as Record<string, unknown> | undefined)?.name ?? "";
+        if (sname) detail = `  ${String(sname)}`;
+      }
+      label("AXL", tick, actor, `→ ${to}  ${C.dim}${String(kind)}${C.reset}${detail}`);
       break;
     }
     case EventType.SKILL_TAUGHT:
@@ -249,13 +258,20 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
       break;
     }
 
+    case EventType.DEATH_WARNING: {
+      const from       = String(pl.from ?? "peer");
+      const ct         = String(pl.crisisType ?? "?");
+      const skillTried = pl.skillTried ? `  tried=${C.yellow}${String(pl.skillTried)}${C.reset}` : "";
+      label("AXL", tick, actor, `← death-warning  from=${from}  crisis=${C.red}${ct}${C.reset}${skillTried}`);
+      break;
+    }
+
     // ── ignored (noise) ───────────────────────────────────────────────────
     case EventType.WORLD_TICK:
     case EventType.FOOD_GATHERED:
     case EventType.SELF_EVAL_STARTED:
     case EventType.EPISODE_SAVED:
     case EventType.EPISODE_LOADED:
-    case EventType.DEATH_WARNING:
       break;
 
     default:
@@ -287,10 +303,12 @@ async function main(): Promise<void> {
   const config = loadConfig({
     ...process.env,
     MOIRAI_TICK_MS:  "250",
-    MOIRAI_MAX_TICKS: "220",
+    MOIRAI_MAX_TICKS: "500",
     MOIRAI_WS_PORT:  "0",
     MOIRAI_EPISODE_DIR: "/tmp/moirai-live-episodes",
     MOIRAI_RESUME: resume ? "true" : "false",
+    MOIRAI_AGENTS: process.env.MOIRAI_AGENTS ?? "alice,bob,cara,dave",
+    MOIRAI_INHERITORS: process.env.MOIRAI_INHERITORS ?? "eve",
   });
 
   process.stdout.write(`${C.bold}── moirai live simulation ──${C.reset}\n`);

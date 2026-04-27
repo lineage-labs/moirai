@@ -71,7 +71,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     payload: { candidateName: candidate.name },
   });
 
-  const evalPrompt = buildSelfEvalPrompt({ environment, candidate, situation, crisis, personality });
+  const evalPrompt = buildSelfEvalPrompt({ environment, candidate, situation, crisis, personality, inventory });
   const evalRes = await compute.infer(evalPrompt, { verifiable: true });
   if (!evalRes.receipt.verifiable) {
     process.stderr.write(`[evolve] WARNING: hero-path self-eval fell back to non-verifiable inference\n`);
@@ -98,7 +98,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
       payload: { score: evalResp.score, failureModes: evalResp.failureModes },
       receiptHash: evalRes.receipt.hash,
     });
-    return { status: "rejected", score: evalResp.score, failureModes: evalResp.failureModes };
+    return { status: "rejected", score: evalResp.score, failureModes: evalResp.failureModes, candidateName: candidate.name };
   }
 
   const id = computeSkillId(candidate, agentId, tick);
@@ -134,7 +134,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
 
   emit({
     type: EventType.SKILL_ACCEPTED,
-    payload: { skill, ...(storedLocal ? { storedLocal: true } : {}) },
+    payload: { skill, score: evalResp.score, ...(storedLocal ? { storedLocal: true } : {}) },
   });
 
   return { status: "accepted", skill };

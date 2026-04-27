@@ -55,6 +55,8 @@ class StubStorage implements IStorageAdapter {
   async getAgentInventory(agentId: string) {
     return this.inventories.get(agentId) ?? [];
   }
+  async putAgentCautions() {}
+  async getAgentCautions() { return {}; }
 }
 
 class StubNetwork implements INetworkAdapter {

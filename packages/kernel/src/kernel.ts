@@ -29,6 +29,7 @@ export type EvolveRejection = {
   status: "rejected";
   score: number;
   failureModes: string[];
+  candidateName: string;
 };
 
 export type EvolveResult = EvolveAcceptance | EvolveRejection;

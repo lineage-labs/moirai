@@ -1,7 +1,7 @@
 import { loadEnvironment } from "@moirai/environment";
 import { loadPersonality } from "@moirai/personality";
 import type { Kernel, KernelConfig } from "@moirai/kernel";
-import { type DomainEvent, type EngineToAgentMessage } from "@moirai/shared";
+import { EventType, type DomainEvent, type EngineToAgentMessage } from "@moirai/shared";
 import { inheritOnSpawn, type DecisionDeps } from "./decisionLoop.js";
 import { EventQueue } from "./eventQueue.js";
 import { onEngineMessage, sendToEngine } from "./parentIpc.js";
@@ -42,12 +42,12 @@ async function main(): Promise<void> {
           personality,
           environment,
           emit: (e: Omit<DomainEvent, "tick" | "actorId">) => {
-            const event: DomainEvent = { tick: msg.tick, actorId: msg.agentId, ...e };
+            const event: DomainEvent = { tick: queue.currentTick, actorId: msg.agentId, ...e };
             sendToEngine({ kind: "EVENT", event });
           },
         });
 
-        deps = { agentId: msg.agentId, personality, environment, kernel, skills, crisisCautions: new Map() };
+        deps = { agentId: msg.agentId, personality, environment, kernel, skills, crisisCautions: new Map(), lastAttempts: new Map(), deadPeers: new Set() };
 
         kernel.net.subscribe(async (peerMsg) => {
           if (!deps) return;
@@ -82,7 +82,16 @@ async function main(): Promise<void> {
         return;
 
       case "SHUTDOWN":
-        if (deps) await deps.kernel.shutdown?.();
+        if (deps) {
+          for (const crisis of msg.deathCrises ?? []) {
+            const attempt = deps.lastAttempts.get(crisis.type.toLowerCase());
+            const deathPayload = { kind: "DEATH_WARNING", crisisType: crisis.type, crisisDescription: crisis.description, skillTried: attempt?.skillName, failureModes: attempt?.failureModes ?? [] };
+            sendToEngine({ kind: "EVENT", event: { type: EventType.AXL_BROADCAST, tick: queue.currentTick, actorId: deps.agentId, payload: { payload: deathPayload } } });
+            await deps.kernel.net.broadcast(deathPayload).catch(() => {});
+          }
+          if (msg.deathCrises?.length) await new Promise((r) => setTimeout(r, 800));
+          await deps.kernel.shutdown?.();
+        }
         process.exit(0);
     }
   });

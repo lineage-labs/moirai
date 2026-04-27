@@ -8,23 +8,38 @@ import type { Crisis, Environment, Skill } from "@moirai/shared";
  * v2: replace with LLM adjudication if needed.
  */
 export function skillResolvesCrisis(skill: Skill, crisis: Crisis, environment: Environment): boolean {
-  const haystack = `${skill.effect} ${skill.description} ${skill.steps.join(" ")}`.toLowerCase();
+  const haystack = [
+    skill.name,
+    skill.effect,
+    skill.description,
+    ...(skill.preconditions ?? []),
+    ...skill.steps,
+  ].join(" ").toLowerCase();
+
   const crisisType = crisis.type.toLowerCase();
   const crisisDesc = crisis.description.toLowerCase();
 
+  // Direct: skill name/description explicitly references the crisis type
   if (haystack.includes(crisisType)) return true;
 
-  const tokens = crisisDesc.split(/\s+/).filter((t) => t.length > 3);
-  let hits = 0;
-  for (const tok of tokens) if (haystack.includes(tok)) hits++;
-  if (hits >= 2) return true;
+  // Token overlap: any significant word from crisis description appears in skill
+  const descTokens = crisisDesc.split(/\s+/).filter((t) => t.length > 3);
+  for (const tok of descTokens) {
+    if (haystack.includes(tok)) return true;
+  }
 
-  const physics = environment.physics.join(" ").toLowerCase();
-  for (const tok of tokens) {
-    if (physics.includes(tok)) {
-      for (const word of haystack.split(/\s+/)) {
-        if (word.length > 3 && physics.includes(word)) return true;
-      }
+  // Physics bridge: find rules that mention the crisis type, then check if the
+  // skill invokes any keyword those rules prescribe (e.g. "lions fear pointy things"
+  // → a skill mentioning "pointy" or "sharp" resolves a LION crisis)
+  const relevantRules = environment.physics.filter((rule) =>
+    rule.toLowerCase().includes(crisisType),
+  );
+  for (const rule of relevantRules) {
+    const ruleTokens = rule.toLowerCase().split(/\s+/).filter(
+      (t) => t.length > 3 && !t.includes(crisisType),
+    );
+    for (const tok of ruleTokens) {
+      if (haystack.includes(tok)) return true;
     }
   }
 

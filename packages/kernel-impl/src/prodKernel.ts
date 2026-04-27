@@ -8,25 +8,16 @@
  *   alice → AXL_URL_1  + docker/axl/keys/alice.pem
  *   bob   → AXL_URL_2  + docker/axl/keys/bob.pem
  *   other → AXL_URL_3  + docker/axl/keys/charlie.pem
- *
- * Evolve routing:
- *   crisis present  → 0G Compute sealed hero path  (verifiable receipt)
- *   no crisis       → background LLM path           (verifiable: false)
  */
 
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Kernel, KernelConfig, EvolveInput, EvolveResult, EmitEvent } from "@moirai/kernel";
-import { EventType } from "@moirai/shared";
-import type { Skill, Environment, Personality } from "@moirai/shared";
+import type { Kernel, KernelConfig } from "@moirai/kernel";
 import { createKernel as implCreate } from "./index.js";
 import { ZeroGComputeAdapter } from "./adapters/0g-compute.js";
 import { ZeroGStorageAdapter } from "./adapters/0g-storage.js";
 import { AxlAdapter } from "./adapters/axl.js";
-import { buildReasonPrompt, buildSelfEvalPrompt } from "./prompts.js";
-import { parseCandidate, parseEval } from "./parse.js";
-import { computeSkillId } from "./skill-id.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const AXL_KEYS_DIR = resolve(REPO_ROOT, "docker/axl/keys");
@@ -62,10 +53,6 @@ function axlKeyFor(id: string): string | undefined {
 
 export async function createKernel(config: KernelConfig): Promise<Kernel> {
   const agentId = config.agentId ?? req("MOIRAI_AGENT_ID");
-  const emit = config.emit as EmitEvent;
-  const personality = config.personality as Personality;
-  const environment = config.environment as Environment;
-
   const rpcUrl     = req("ZG_RPC_URL");
   const privateKey = req("ZG_PRIVATE_KEY");
   const indexerUrl = req("ZG_INDEXER_URL");
@@ -112,104 +99,10 @@ export async function createKernel(config: KernelConfig): Promise<Kernel> {
     `[kernel:${agentId}] AXL connected  url=${axlUrl}  key=${axlKey ?? "ephemeral"}\n`,
   );
 
-  // Delegate crisis evolves to the kernel-impl hero path (0G Compute sealed).
   const innerKernel = await implCreate({ ...config, compute, storage, network: net });
-
-  // Background evolve for non-crisis calls (curiosity, routine skill discovery).
-  // Uses compute adapter with verifiable:false — hits fallback LLM when configured.
-  async function backgroundEvolve(input: EvolveInput): Promise<EvolveResult> {
-    const { tick, situation, seedSkill, inventory, knownSkills } = input;
-
-    emit({ type: EventType.REASONING_STARTED, payload: { situation } });
-
-    let reasonRes;
-    try {
-      reasonRes = await compute.infer(
-        buildReasonPrompt({
-          personality,
-          environment,
-          situation,
-          inventory,
-          knownSkillSummaries: knownSkills.map((s) => ({
-            name: s.name,
-            description: s.description,
-            effect: s.effect,
-          })),
-        }),
-        { verifiable: false },
-      );
-    } catch {
-      return { status: "rejected", score: 0, failureModes: ["background infer unavailable"] };
-    }
-
-    let candidate;
-    try {
-      candidate = parseCandidate(reasonRes.text);
-    } catch {
-      emit({ type: EventType.SKILL_REJECTED, payload: { score: 0, failureModes: ["parse-failed"] } });
-      return { status: "rejected", score: 0, failureModes: ["could not parse skill from output"] };
-    }
-
-    emit({
-      type: EventType.SKILL_PROPOSED,
-      payload: { candidate },
-      receiptHash: reasonRes.receipt.hash,
-    });
-
-    let evalRes;
-    try {
-      evalRes = await compute.infer(
-        buildSelfEvalPrompt({ environment, candidate, situation, personality }),
-        { verifiable: false },
-      );
-    } catch {
-      return { status: "rejected", score: 0, failureModes: ["self-eval infer unavailable"] };
-    }
-
-    let evalResult;
-    try {
-      evalResult = parseEval(evalRes.text);
-    } catch {
-      return { status: "rejected", score: 0, failureModes: ["could not parse self-eval"] };
-    }
-
-    emit({
-      type: EventType.SELF_EVAL_RESULT,
-      payload: { score: evalResult.score, failureModes: evalResult.failureModes },
-      receiptHash: evalRes.receipt.hash,
-    });
-
-    if (evalResult.score < 0.4) {
-      emit({
-        type: EventType.SKILL_REJECTED,
-        payload: { score: evalResult.score, failureModes: evalResult.failureModes },
-      });
-      return { status: "rejected", score: evalResult.score, failureModes: evalResult.failureModes };
-    }
-
-    const id = computeSkillId(candidate, agentId, tick);
-    const skill: Skill = {
-      id,
-      ...candidate,
-      provenance: {
-        inventedBy: agentId,
-        inventedAt: tick,
-        bornFrom: seedSkill ? [`skill:${seedSkill.id}`] : [`need:${situation.slice(0, 40)}`],
-        reasonReceipt: reasonRes.receipt.hash,
-        selfEvalReceipt: evalRes.receipt.hash,
-        selfEvalScore: evalResult.score,
-      },
-    };
-
-    await storage.putSkill(skill);
-    emit({ type: EventType.SKILL_ACCEPTED, payload: { skill }, receiptHash: evalRes.receipt.hash });
-    return { status: "accepted", skill };
-  }
 
   return {
     ...innerKernel,
-    evolve: (input: EvolveInput): Promise<EvolveResult> =>
-      input.crisis ? innerKernel.evolve(input) : backgroundEvolve(input),
     shutdown: async () => {
       await net.disconnect().catch(() => {});
       await innerKernel.shutdown?.();

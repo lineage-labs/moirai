@@ -13,7 +13,6 @@ export type EngineConfig = {
   episodePersistenceDir: string;
   /** Load the latest saved episode on boot (default: false — always start fresh). */
   resumeFromEpisode: boolean;
-  devStorageDir?: string;
 };
 
 const DEFAULT_AGENT_IDS = ["alice", "bob", "cara"];
@@ -35,6 +34,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): EngineConfig {
     inheritorPool,
     episodePersistenceDir: env.MOIRAI_EPISODE_DIR ?? "/tmp/moirai-episodes",
     resumeFromEpisode: env.MOIRAI_RESUME === "true",
-    ...(env.MOIRAI_DEV_STORAGE ? { devStorageDir: env.MOIRAI_DEV_STORAGE } : {}),
   };
 }

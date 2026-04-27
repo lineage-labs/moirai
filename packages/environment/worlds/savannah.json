@@ -24,6 +24,20 @@
       "description": "A second lion appears at the watering hole",
       "targets": ["bob"],
       "deadlineTicks": 50
+    },
+    {
+      "tick": 185,
+      "type": "LION",
+      "description": "A lion corners Dave near the treeline",
+      "targets": ["dave"],
+      "deadlineTicks": 80
+    },
+    {
+      "tick": 320,
+      "type": "LION",
+      "description": "A lion prowls through the camp and spots Eve",
+      "targets": ["eve"],
+      "deadlineTicks": 120
     }
   ],
   "hiddenRules": [

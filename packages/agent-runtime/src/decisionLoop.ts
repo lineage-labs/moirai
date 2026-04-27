@@ -6,13 +6,14 @@ import {
   type Crisis,
   type Environment,
   type Personality,
+  type Skill,
 } from "@moirai/shared";
 import { sendToEngine } from "./parentIpc.js";
 import type { SkillSet } from "./skillSet.js";
-import { localGetSkill, localGetInventory, localPutInventory } from "./localFallback.js";
+import { localGetSkill, localGetInventory, localListSkills, localPutInventory, localPutCautions, localGetCautions } from "./localFallback.js";
 
 type TeachPayload = { kind: "TEACH"; skillId: string };
-type DeathWarningPayload = { kind: "DEATH_WARNING"; crisisType: string; crisisDescription: string };
+type DeathWarningPayload = { kind: "DEATH_WARNING"; crisisType: string; crisisDescription: string; skillTried?: string; failureModes?: string[] };
 
 export type DecisionDeps = {
   agentId: string;
@@ -21,6 +22,8 @@ export type DecisionDeps = {
   kernel: Kernel;
   skills: SkillSet;
   crisisCautions: Map<string, string>; // crisisType → caution note injected into evolve prompt
+  lastAttempts: Map<string, { skillName: string; failureModes: string[] }>; // crisisType → what was tried
+  deadPeers: Set<string>;
   me?: AgentInWorld;
 };
 
@@ -64,19 +67,37 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
     knownSkills: skills.all(),
   });
 
-  if (result.status !== "accepted") return;
+  if (result.status !== "accepted") {
+    const key = crisis.type.toLowerCase();
+    const skillName = result.candidateName;
+    deps.lastAttempts.set(key, { skillName, failureModes: result.failureModes });
+    const selfCaution = `A previous agent died facing a ${crisis.type} crisis. They tried "${skillName}". Approach differently.`;
+    crisisCautions.set(key, selfCaution);
+    const snapshot = Object.fromEntries(crisisCautions);
+    kernel.storage.putAgentCautions(agentId, snapshot).catch(() => localPutCautions(agentId, snapshot));
+    return;
+  }
 
   skills.add(result.skill);
-  const skillIds = skills.all().map((s) => s.id);
-  try {
-    await kernel.storage.putAgentInventory(agentId, skillIds);
-  } catch {
-    await localPutInventory(agentId, skillIds);
-  }
-  await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id, skillName: result.skill.name });
-  sendToEngine({ kind: "PEER_BROADCAST", payload: { kind: "TEACH", skillId: result.skill.id, skillName: result.skill.name } });
   sendToEngine({ kind: "ACTION", action: { kind: "APPLY_SKILL", skillId: result.skill.id, crisisId: crisis.id } });
+
+  persistAndTeach(deps, tick, agentId, result.skill);
 }
+
+async function persistAndTeach(deps: DecisionDeps, tick: number, agentId: string, skill: Skill): Promise<void> {
+  const { kernel } = deps;
+  const skillIds = deps.skills.all().map((s) => s.id);
+  kernel.storage.putAgentInventory(agentId, skillIds).catch(() => localPutInventory(agentId, skillIds));
+
+  const teachPayload = { kind: "TEACH", skillId: skill.id, skillName: skill.name };
+  const alivePeers = (await kernel.net.topology()).filter((id) => !deps.deadPeers.has(id)).sort();
+  const targets = alivePeers.slice(0, Math.ceil(alivePeers.length / 2));
+  for (const peerId of targets) {
+    sendToEngine({ kind: "EVENT", event: { type: EventType.AXL_WHISPER, tick, actorId: agentId, payload: { to: peerId, payload: teachPayload } } });
+    await kernel.net.whisper(peerId, teachPayload);
+  }
+}
+
 
 export async function handlePeerMessage(
   deps: DecisionDeps,
@@ -86,11 +107,15 @@ export async function handlePeerMessage(
   const { agentId, kernel, skills, crisisCautions } = deps;
 
   if (isDeathWarning(msg.payload)) {
-    const { crisisType, crisisDescription } = msg.payload;
-    crisisCautions.set(crisisType.toLowerCase(), `a peer died facing a ${crisisType} (${crisisDescription}) — find a better approach.`);
+    const { crisisType, skillTried } = msg.payload;
+    deps.deadPeers.add(msg.from);
+    const caution = `A peer died facing a ${crisisType} crisis${skillTried ? `. They tried "${skillTried}"` : ""}. Approach differently.`;
+    crisisCautions.set(crisisType.toLowerCase(), caution);
+    const cautionSnapshot = Object.fromEntries(crisisCautions);
+    kernel.storage.putAgentCautions(agentId, cautionSnapshot).catch(() => localPutCautions(agentId, cautionSnapshot));
     sendToEngine({
       kind: "EVENT",
-      event: { type: EventType.DEATH_WARNING, tick, actorId: agentId, payload: { from: msg.from, crisisType, crisisDescription } },
+      event: { type: EventType.DEATH_WARNING, tick, actorId: agentId, payload: { from: msg.from, crisisType, skillTried, caution } },
     });
     return;
   }
@@ -102,35 +127,6 @@ export async function handlePeerMessage(
 
   const skill = (await kernel.storage.getSkill(skillId)) ?? (await localGetSkill(skillId));
   if (!skill) return;
-
-  // Personality filter: does this skill fit who I am?
-  const { personality } = deps;
-  const prompt = [
-    `You are ${personality.name}. Traits: ${personality.traits.join(", ")}. Risk tolerance: ${personality.risk}.`,
-    `A peer is offering to teach you: "${skill.name}" — ${skill.description}`,
-    `Effect: ${skill.effect}  |  Quality score: ${skill.provenance.selfEvalScore.toFixed(2)}/1.0`,
-    `Would you adopt this skill given your personality? Reply ONLY with JSON: {"accept": boolean}`,
-  ].join("\n");
-
-  let accepted = true;
-  try {
-    const resp = await kernel.compute.infer(prompt, { verifiable: false });
-    const start = resp.text.indexOf("{");
-    const end = resp.text.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      accepted = (JSON.parse(resp.text.slice(start, end + 1)) as { accept: boolean }).accept;
-    }
-  } catch {
-    // fallback: accept
-  }
-
-  if (!accepted) {
-    sendToEngine({
-      kind: "EVENT",
-      event: { type: EventType.SKILL_REJECTED_BY_PEER, tick, actorId: agentId, payload: { skillId, from: msg.from, reason: "personality_mismatch" } },
-    });
-    return;
-  }
 
   skills.add(skill);
   const peerSkillIds = skills.all().map((s) => s.id);
@@ -150,25 +146,59 @@ export async function handlePeerMessage(
 }
 
 export async function inheritOnSpawn(deps: DecisionDeps, tick: number, predecessorIds?: string[]): Promise<void> {
+  // Initial agents start with no skills — only respawned inheritors inherit
   if (!predecessorIds?.length) return;
 
   const seen = new Set<string>();
+
+  function emitInherited(skill: Skill): void {
+    deps.skills.add(skill);
+    sendToEngine({
+      kind: "EVENT",
+      event: {
+        type: EventType.SKILL_INHERITED,
+        tick,
+        actorId: deps.agentId,
+        payload: { skillId: skill.id, skillName: skill.name, skill, from: skill.provenance.inventedBy },
+      },
+    });
+  }
+
+  // Collect skill IDs from predecessor inventories (try 0G Storage, then local fallback)
+  const lineageIds: string[] = [];
   for (const predecessorId of predecessorIds) {
     let ids = await deps.kernel.storage.getAgentInventory(predecessorId);
     if (ids.length === 0) ids = await localGetInventory(predecessorId);
-    for (const skillId of ids) {
-      if (seen.has(skillId) || deps.skills.has(skillId)) continue;
-      seen.add(skillId);
-      const skill = await deps.kernel.storage.getSkill(skillId);
-      if (!skill) continue;
-      deps.skills.add(skill);
-      sendToEngine({
-        kind: "EVENT",
-        event: { type: EventType.SKILL_INHERITED, tick, actorId: deps.agentId, payload: { skillId: skill.id, skill, from: skill.provenance.inventedBy } },
-      });
+    for (const id of ids) {
+      if (!seen.has(id)) { seen.add(id); lineageIds.push(id); }
     }
   }
+  for (const skillId of lineageIds) {
+    if (deps.skills.has(skillId)) continue;
+    const skill = (await deps.kernel.storage.getSkill(skillId)) ?? (await localGetSkill(skillId));
+    if (skill) emitInherited(skill);
+  }
+
   if (seen.size > 0) {
-    await deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id));
+    await deps.kernel.storage.putAgentInventory(deps.agentId, deps.skills.all().map((s) => s.id)).catch(() =>
+      localPutInventory(deps.agentId, deps.skills.all().map((s) => s.id)),
+    );
+  }
+
+  for (const predecessorId of predecessorIds) {
+    let inherited: Record<string, string>;
+    try {
+      inherited = await deps.kernel.storage.getAgentCautions(predecessorId);
+      if (Object.keys(inherited).length === 0) inherited = await localGetCautions(predecessorId);
+    } catch {
+      inherited = await localGetCautions(predecessorId);
+    }
+    for (const [crisisType, caution] of Object.entries(inherited)) {
+      if (!deps.crisisCautions.has(crisisType)) deps.crisisCautions.set(crisisType, caution);
+    }
+  }
+  if (deps.crisisCautions.size > 0) {
+    const snapshot = Object.fromEntries(deps.crisisCautions);
+    deps.kernel.storage.putAgentCautions(deps.agentId, snapshot).catch(() => localPutCautions(deps.agentId, snapshot));
   }
 }

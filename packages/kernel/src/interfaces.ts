@@ -21,6 +21,8 @@ export interface IStorageAdapter {
   listSkills(): Promise<Skill[]>;
   putAgentInventory(agentId: string, skillIds: string[]): Promise<void>;
   getAgentInventory(agentId: string): Promise<string[]>;
+  putAgentCautions(agentId: string, cautions: Record<string, string>): Promise<void>;
+  getAgentCautions(agentId: string): Promise<Record<string, string>>;
 }
 
 export type PeerMessageHandler = (msg: { from: string; payload: unknown }) => void | Promise<void>;

@@ -42,6 +42,10 @@ export class EventQueue {
   }
 
   enqueue(raw: CrisisEntry | Omit<PeerEntry, "priority"> | Omit<TickEntry, "priority">): void {
+    // Drop stale TICK decisions while a crisis is active or pending — the agent
+    // is fighting for survival and routine actions are irrelevant.
+    if (raw.kind === "TICK" && (this.pendingCrisisCount > 0 || this.processing)) return;
+
     const priority = this.computePriority(raw);
     const event = { ...raw, priority } as QueuedEvent;
 

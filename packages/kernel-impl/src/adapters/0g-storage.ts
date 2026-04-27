@@ -98,6 +98,26 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     return blob.skillIds;
   }
 
+  private cautionRoots = new Map<string, string>();
+  private cautionCache = new Map<string, Record<string, string>>();
+
+  async putAgentCautions(agentId: string, cautions: Record<string, string>): Promise<void> {
+    const rootHash = await this.uploadBlob({ agentId, cautions });
+    this.cautionRoots.set(agentId, rootHash);
+    this.cautionCache.set(agentId, cautions);
+  }
+
+  async getAgentCautions(agentId: string): Promise<Record<string, string>> {
+    const cached = this.cautionCache.get(agentId);
+    if (cached) return cached;
+    const rootHash = this.cautionRoots.get(agentId);
+    if (!rootHash) return {};
+    const blob = await this.downloadBlob<{ agentId: string; cautions: Record<string, string> }>(rootHash);
+    if (!blob) return {};
+    this.cautionCache.set(agentId, blob.cautions);
+    return blob.cautions;
+  }
+
   // --- engine helpers (not on the IStorageAdapter interface) ---
 
   seedSkillRoot(skillId: string, rootHash: string): void {

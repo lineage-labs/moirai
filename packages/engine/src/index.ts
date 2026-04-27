@@ -12,7 +12,6 @@ import {
 import { loadConfig, type EngineConfig } from "./config.js";
 import { createCrisisOrchestrator } from "./crisisOrchestrator.js";
 import { EventBus } from "./eventBus.js";
-import { PeerRouter } from "./peerRouter.js";
 import { SkillCache } from "./skillCache.js";
 import { Supervisor } from "./supervisor.js";
 import { BrowserBridge } from "./wsServer.js";
@@ -41,7 +40,6 @@ export type EngineHandle = {
 };
 
 export async function bootEngine(config: EngineConfig = loadConfig()): Promise<EngineHandle> {
-  if (config.devStorageDir) process.env.MOIRAI_DEV_STORAGE = config.devStorageDir;
   const env = await loadEnvironment(config.environmentPath);
   const orchestrator = createCrisisOrchestrator(env);
   const world = createWorld();
@@ -56,7 +54,6 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       tick: previousEpisode.savedAt,
     }));
   }
-  const peerRouter = new PeerRouter();
   const skillCache = new SkillCache();
   const browser = new BrowserBridge(config.wsPort);
   const inheritorQueue = [...config.inheritorPool];
@@ -67,7 +64,6 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   const supervisor = new Supervisor({
     onMessage: (agentId, msg) => handleAgentMessage(agentId, msg),
     onExit: (agentId) => {
-      peerRouter.unregister(agentId);
       evolvingAgents.delete(agentId); // crashed process = inference failed; let crisis expiry kill the agent
     },
   });
@@ -82,14 +78,13 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   }
 
   for (const { agentId, personalityPath } of config.agents) {
-    const handle = supervisor.spawn({
+    supervisor.spawn({
       agentId,
       personalityPath,
       environmentPath: config.environmentPath,
       initialPeerIds: config.agents.map((a) => a.agentId).filter((id) => id !== agentId),
       tick: world.tick,
     });
-    peerRouter.register(agentId, handle.send);
   }
 
   let stopping = false;
@@ -102,18 +97,10 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
   function broadcastDeath(agentId: string, reason: string, crises: Crisis[]): void {
     killAgent(world, agentId);
     bus.emit(domainEvent(EventType.AGENT_DIED, world.tick, agentId, { reason, crisisTypes: crises.map((c) => c.type) }));
-    supervisor.send(agentId, { kind: "SHUTDOWN" });
-    for (const crisis of crises) {
-      for (const [peerId, peer] of Object.entries(world.agents)) {
-        if (peerId !== agentId && peer.alive) {
-          supervisor.send(peerId, {
-            kind: "PEER_MESSAGE",
-            from: agentId,
-            payload: { kind: "DEATH_WARNING", crisisType: crisis.type, crisisDescription: crisis.description },
-          });
-        }
-      }
-    }
+    supervisor.send(agentId, {
+      kind: "SHUTDOWN",
+      deathCrises: crises.map((c) => ({ type: c.type, description: c.description })),
+    });
     evolvingAgents.delete(agentId);
     // Purge this agent from all remaining active crises so they can't re-trigger on them
     const nowEmpty = cleanupAgentCrises(world, agentId);
@@ -194,7 +181,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
     const agentId = p.id;
     spawnAgent(world, agentId, p.id);
     bus.emit(domainEvent(EventType.AGENT_SPAWNED, world.tick, agentId, { personalityId: p.id, fresh: true, inheritedFrom: predecessorIds }));
-    const handle = supervisor.spawn({
+    supervisor.spawn({
       agentId,
       personalityPath,
       environmentPath: config.environmentPath,
@@ -202,7 +189,6 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
       tick: world.tick,
       predecessorIds,
     });
-    peerRouter.register(agentId, handle.send);
   }
 
   function handleAgentMessage(agentId: string, msg: AgentToEngineMessage): void {
@@ -217,18 +203,6 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         if (enriched.type === EventType.REASONING_STARTED) evolvingAgents.add(agentId);
         if (enriched.type === EventType.SKILL_ACCEPTED || enriched.type === EventType.SKILL_REJECTED) evolvingAgents.delete(agentId);
         bus.emit(enriched);
-        return;
-      }
-
-      case "PEER_SEND": {
-        bus.emit(domainEvent(EventType.AXL_WHISPER, world.tick, agentId, { to: msg.to, payload: msg.payload }));
-        peerRouter.whisper(agentId, msg.to, msg.payload);
-        return;
-      }
-
-      case "PEER_BROADCAST": {
-        bus.emit(domainEvent(EventType.AXL_BROADCAST, world.tick, agentId, { payload: msg.payload }));
-        peerRouter.broadcast(agentId, msg.payload);
         return;
       }
 

@@ -7,7 +7,7 @@ export type EngineToAgentMessage =
   | { kind: "TICK"; tick: number; me: AgentInWorld; nearby: AgentInWorld[] }
   | { kind: "CRISIS"; tick: number; crisis: Crisis }
   | { kind: "PEER_MESSAGE"; from: string; payload: unknown }
-  | { kind: "SHUTDOWN" };
+  | { kind: "SHUTDOWN"; deathCrises?: Array<{ type: string; description: string }> };
 
 export type AgentToEngineMessage =
   | { kind: "READY"; agentId: string }
