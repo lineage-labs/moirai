@@ -175,14 +175,7 @@ export async function bootEngine(config: EngineConfig = loadConfig()): Promise<E
         bus.emit(domainEvent(EventType.CRISIS_RESOLVED, world.tick, a.id, { crisisId, outcome: "needs_recovered" }));
       }
 
-      const forced = config.forcedDeaths.find((d) => d.agentId === a.id && d.tick === world.tick);
-      if (forced && !evolvingAgents.has(a.id)) {
-        const activeCrises = world.activeCrises.filter((c) => c.affectedAgents.includes(a.id));
-        broadcastDeath(a.id, "forced", activeCrises);
-        diedThisTick.push(a.id);
-      } else {
-        supervisor.send(a.id, { kind: "TICK", tick: world.tick, me: a, nearby: nearbyAgents(world, a.id) });
-      }
+      supervisor.send(a.id, { kind: "TICK", tick: world.tick, me: a, nearby: nearbyAgents(world, a.id) });
     }
 
     // Spawn inheritors after all deaths are collected so predecessorIds is the full dead list

@@ -95,16 +95,21 @@ export class EventQueue {
   }
 
   private async dispatch(event: QueuedEvent, deps: DecisionDeps): Promise<void> {
-    switch (event.kind) {
-      case "CRISIS":
-        await handleCrisis(deps, event.tick, event.crisis);
-        break;
-      case "PEER_MESSAGE":
-        await handlePeerMessage(deps, event.tick, { from: event.from, payload: event.payload });
-        break;
-      case "TICK":
-        await handleTick(deps, event.tick, event.me, event.nearby);
-        break;
+    try {
+      switch (event.kind) {
+        case "CRISIS":
+          await handleCrisis(deps, event.tick, event.crisis);
+          break;
+        case "PEER_MESSAGE":
+          await handlePeerMessage(deps, event.tick, { from: event.from, payload: event.payload });
+          break;
+        case "TICK":
+          await handleTick(deps, event.tick, event.me, event.nearby);
+          break;
+      }
+    } catch (err) {
+      // Skill not acquired — crisis stays unresolved, agent dies at deadline via normal expiry path
+      process.stderr.write(`[${deps.agentId}] ${event.kind} error (crisis unresolved): ${err}\n`);
     }
   }
 }

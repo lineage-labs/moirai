@@ -5,6 +5,22 @@
 Moirai is an agent-village simulation where autonomous LLM-backed agents live, survive, learn skills, teach each other, and pass knowledge to future generations. Each agent runs as its own Node.js process. The engine ticks the world forward, injects crises, and supervises the agents.
 
 ---
+ RUN
+# 1. Generate keys for all 5 nodes (skips existing ones)
+  pnpm axl:mesh:keys
+
+  # 2. Restart the mesh with the 2 new nodes (dave + eve)
+  docker compose -f docker-compose.axl.yml down
+  pnpm axl:mesh:up   # builds image + starts all 5 containers
+
+  # 3. (Optional) verify all 5 nodes are up
+  bash scripts/axl-mesh-check.sh
+
+  # 4. Run the live simulation
+  pnpm --filter @moirai/engine sim-live
+
+
+---
 
 ## Architecture
 
@@ -284,16 +300,4 @@ pnpm typecheck    # runs tsc --noEmit across all packages
 | `HIDDEN_RULE_DISCOVERED` | engine | Agent triggered a hidden world rule |
 
 
-## RUN
-# 1. Generate keys for all 5 nodes (skips existing ones)
-  pnpm axl:mesh:keys
-
-  # 2. Restart the mesh with the 2 new nodes (dave + eve)
-  docker compose -f docker-compose.axl.yml down
-  pnpm axl:mesh:up   # builds image + starts all 5 containers
-
-  # 3. (Optional) verify all 5 nodes are up
-  bash scripts/axl-mesh-check.sh
-
-  # 4. Run the live simulation
-  pnpm --filter @moirai/engine sim-live
+##

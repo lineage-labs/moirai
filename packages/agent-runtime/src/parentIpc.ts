@@ -1,8 +1,12 @@
 import type { AgentToEngineMessage, EngineToAgentMessage } from "@moirai/shared";
 
 export function sendToEngine(msg: AgentToEngineMessage): void {
-  if (!process.send) throw new Error("agent-runtime must run as a forked child with IPC");
-  process.send(msg);
+  if (!process.send) return;
+  try {
+    process.send(msg);
+  } catch {
+    // ERR_IPC_CHANNEL_CLOSED — engine died; nothing to do
+  }
 }
 
 export function onEngineMessage(handler: (msg: EngineToAgentMessage) => void | Promise<void>): void {

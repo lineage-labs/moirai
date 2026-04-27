@@ -74,6 +74,7 @@ export async function handleCrisis(deps: DecisionDeps, tick: number, crisis: Cri
     await localPutInventory(agentId, skillIds);
   }
   await kernel.net.broadcast({ kind: "TEACH", skillId: result.skill.id });
+  sendToEngine({ kind: "PEER_BROADCAST", payload: { kind: "TEACH", skillId: result.skill.id } });
   sendToEngine({
     kind: "EVENT",
     event: { type: EventType.SKILL_TAUGHT, tick, actorId: agentId, payload: { skillId: result.skill.id, to: "*", skill: result.skill } },

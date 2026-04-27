@@ -76,6 +76,9 @@ async function main(): Promise<void> {
       }
 
       case "PEER_MESSAGE":
+        if (!deps) return;
+        queue.enqueue({ kind: "PEER_MESSAGE", tick: queue.currentTick, from: msg.from, payload: msg.payload });
+        await queue.drain(deps);
         return;
 
       case "SHUTDOWN":

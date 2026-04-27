@@ -47,6 +47,10 @@ export class Supervisor {
       this.onMessage(opts.agentId, raw as AgentToEngineMessage);
     });
 
+    child.on("error", () => {
+      // EPIPE / ERR_IPC_CHANNEL_CLOSED when the child dies mid-tick — ignore, exit handles cleanup
+    });
+
     child.on("exit", () => {
       this.children.delete(opts.agentId);
       this.onExit(opts.agentId);
