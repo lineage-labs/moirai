@@ -22,7 +22,7 @@ export function buildReasonPrompt(input: ReasonPromptInput): string {
     input.knownSkillSummaries.length
       ? `Known skills:\n${input.knownSkillSummaries.map((s) => `- ${s.name}: ${s.effect}`).join("\n")}`
       : `Known skills: none.`,
-    `Propose ONE new skill to handle this situation using available resources. Respond as JSON: { name, description, preconditions: string[], effect, steps: string[] }.`,
+    `Propose ONE new skill to handle this ${input.crisis ? `"${input.crisis.type}" crisis` : "situation"} using available resources. Respond as JSON: { name, description, preconditions: string[], effect, steps: string[] }.`,
   ]
     .filter(Boolean)
     .join("\n\n");
