@@ -16,13 +16,13 @@
       "type": "LION",
       "description": "A lion approaches and stalks the agents",
       "targets": ["alice", "bob"],
-      "deadlineTicks": 100
+      "deadlineTicks": 150
     },
     {
-      "tick": 140,
+      "tick": 220,
       "type": "LION",
       "description": "A second lion appears at the watering hole",
-      "deadlineTicks": 60
+      "deadlineTicks": 120
     }
   ],
   "hiddenRules": [

@@ -22,7 +22,7 @@ const DEFAULT_AGENT_IDS = ["alice", "bob", "cara"];
 const DEFAULT_INHERITOR_POOL = ["dave", "eve"];
 
 function parseForcedDeaths(s: string | undefined): EngineConfig["forcedDeaths"] {
-  if (!s) return [{ agentId: "alice", tick: 80 }];
+  if (!s) return [{ agentId: "alice", tick: 210 }];
   return s
     .split(",")
     .map((p) => p.trim())
@@ -45,7 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): EngineConfig {
     environmentPath: env.MOIRAI_ENV_PATH ?? seedEnvironmentPath(worldId),
     agents: initialIds.map((id) => ({ agentId: id, personalityPath: seedPersonalityPath(id) })),
     tickIntervalMs: Number(env.MOIRAI_TICK_MS ?? 250),
-    maxTicks: Number(env.MOIRAI_MAX_TICKS ?? 200),
+    maxTicks: Number(env.MOIRAI_MAX_TICKS ?? 400),
     wsPort: Number(env.MOIRAI_WS_PORT ?? 7717),
     forcedDeaths: parseForcedDeaths(env.MOIRAI_FORCED_DEATHS),
     inheritorPool,
