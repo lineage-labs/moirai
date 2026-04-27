@@ -15,7 +15,6 @@ export type Skill = {
   effect: string;
   steps: string[];
   provenance: SkillProvenance;
-  useCount?: number;
 };
 
 export type SkillCandidate = Omit<Skill, "id" | "provenance">;

@@ -50,7 +50,6 @@ const LABELS: Record<string, [string, string]> = {
   "DIED":    [C.red,     "DIED    "],
   "LEARN":   [C.green,   "LEARN   "],
   "INHERIT": [C.cyan,    "INHERIT "],
-  "RULE":    [C.yellow,  "RULE    "],
   "VILLAGE": [C.dim,     "VILLAGE "],
 };
 
@@ -190,9 +189,10 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
     }
 
     // ── AXL network ───────────────────────────────────────────────────────
-    case EventType.AXL_MESSAGE: {
+    case EventType.AXL_WHISPER:
+    case EventType.AXL_BROADCAST: {
       stats.axlMsgs++;
-      const to   = pl.to === "*" ? "broadcast" : `whisper→${String(pl.to)}`;
+      const to   = pl.to ? `whisper→${String(pl.to)}` : "broadcast";
       const body = pl.payload as Record<string, unknown> | undefined;
       const kind = body?.kind ?? body?.type ?? "msg";
       const sname = body?.skillName ?? (body?.skill as Record<string, unknown> | undefined)?.name ?? "";
@@ -252,29 +252,12 @@ function formatEvent(e: DomainEvent, stats: Stats): void {
       break;
     }
 
-    // ── hidden rules / curiosity ───────────────────────────────────────────
-    case EventType.HIDDEN_RULE_DISCOVERED: {
-      label("RULE", tick, actor,
-        `${C.yellow}${String(pl.ruleId)}${C.reset}  ${C.dim}${String(pl.effect ?? "")}${C.reset}`);
-      break;
-    }
-    case EventType.CURIOSITY_EVOLVED: {
-      const base = String(pl.baseSkillName ?? pl.baseSkill ?? "?");
-      const next = String(pl.name ?? pl.skillName ?? "?");
-      label("LEARN", tick, actor, `curiosity-evolved  ${base} → ${C.bold}${next}${C.reset}`);
-      break;
-    }
-
     // ── ignored (noise) ───────────────────────────────────────────────────
     case EventType.WORLD_TICK:
-    case EventType.ACTIVITY_STARTED:
-    case EventType.ACTIVITY_INTERRUPTED:
     case EventType.FOOD_GATHERED:
     case EventType.SELF_EVAL_STARTED:
     case EventType.EPISODE_SAVED:
     case EventType.EPISODE_LOADED:
-    case EventType.SOCIAL_GRAPH_LOADED:
-    case EventType.SOCIAL_GRAPH_UPDATED:
     case EventType.DEATH_WARNING:
       break;
 
@@ -307,10 +290,9 @@ async function main(): Promise<void> {
   const config = loadConfig({
     ...process.env,
     MOIRAI_TICK_MS:  "250",
-    MOIRAI_MAX_TICKS: "200",          // 50 s
+    MOIRAI_MAX_TICKS: "200",
     MOIRAI_WS_PORT:  "0",
     MOIRAI_EPISODE_DIR: "/tmp/moirai-live-episodes",
-    MOIRAI_FORCED_DEATHS: "alice:80", // Alice dies mid-run so inheritance can be shown
     MOIRAI_RESUME: resume ? "true" : "false",
   });
 

@@ -38,9 +38,7 @@ class StubCompute implements IComputeAdapter {
 
 class StubStorage implements IStorageAdapter {
   skills = new Map<string, Skill>();
-  events: DomainEvent[] = [];
   inventories = new Map<string, string[]>();
-  socialGraphs = new Map<string, string[]>();
   async putSkill(skill: Skill) {
     this.skills.set(skill.id, skill);
     return { id: skill.id };
@@ -51,20 +49,11 @@ class StubStorage implements IStorageAdapter {
   async listSkills() {
     return [...this.skills.values()];
   }
-  async appendEvent(e: DomainEvent) {
-    this.events.push(e);
-  }
   async putAgentInventory(agentId: string, skillIds: string[]) {
     this.inventories.set(agentId, skillIds);
   }
   async getAgentInventory(agentId: string) {
     return this.inventories.get(agentId) ?? [];
-  }
-  async putAgentSocialGraph(agentId: string, memberIds: string[]) {
-    this.socialGraphs.set(agentId, memberIds);
-  }
-  async getAgentSocialGraph(agentId: string) {
-    return this.socialGraphs.get(agentId) ?? [];
   }
 }
 

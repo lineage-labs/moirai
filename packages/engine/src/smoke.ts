@@ -10,7 +10,7 @@ const REQUIRED_MILESTONES: Array<EventType | EventType[]> = [
   EventType.SKILL_PROPOSED,
   EventType.SELF_EVAL_RESULT,
   [EventType.SKILL_ACCEPTED, EventType.SKILL_REJECTED], // one of the two must appear
-  EventType.AXL_MESSAGE,
+  [EventType.AXL_WHISPER, EventType.AXL_BROADCAST],
   EventType.SKILL_REJECTED_BY_PEER,                    // at least one peer rejection expected
   EventType.CRISIS_STARTED,
   EventType.CRISIS_RESOLVED,
@@ -34,7 +34,6 @@ async function main(): Promise<void> {
     MOIRAI_MAX_TICKS: "200",
     MOIRAI_TICK_MS: "50",
     MOIRAI_WS_PORT: "0",
-    MOIRAI_FORCED_DEATHS: "alice:20",
     MOIRAI_INHERITORS: "dave,eve",
     MOIRAI_EPISODE_DIR: freshEpisodeDir,
     MOIRAI_DEV_STORAGE: freshDevStorageDir,

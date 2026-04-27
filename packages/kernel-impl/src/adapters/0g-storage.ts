@@ -3,7 +3,7 @@ import { Indexer, MemData } from "@0glabs/0g-ts-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Skill, DomainEvent } from "@moirai/shared";
+import type { Skill } from "@moirai/shared";
 import type { IStorageAdapter } from "@moirai/kernel";
 
 export type ZeroGStorageConfig = {
@@ -38,16 +38,13 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
   private indexerInstance: Indexer | null = null;
   private signerPromise: Promise<ethers.Wallet> | null = null;
 
-  // skill.id → 0G rootHash. Engine seeds this on agent boot for inheritance.
+  // skill.id → 0G rootHash
   private readonly skillRoots = new Map<string, string>();
   private readonly skillCache = new Map<string, Skill>();
-  private readonly eventBuffer: DomainEvent[] = [];
-  // agentId → latest 0G rootHash for that agent's inventory/social-graph blobs.
+  // agentId → latest 0G rootHash for that agent's inventory blob
   private readonly inventoryRoots = new Map<string, string>();
-  private readonly socialGraphRoots = new Map<string, string>();
-  // In-process write-back cache so repeated reads don't hit 0G.
+  // In-process write-back cache so repeated reads don't hit 0G
   private readonly inventoryCache = new Map<string, string[]>();
-  private readonly socialGraphCache = new Map<string, string[]>();
 
   constructor(private readonly cfg: ZeroGStorageConfig) {
     this.maxRetries = cfg.maxRetries ?? 3;
@@ -82,12 +79,6 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     return out;
   }
 
-  async appendEvent(event: DomainEvent): Promise<void> {
-    // Hackathon scope: in-memory buffer. Skills already carry receipts on-chain.
-    // Events flushed to 0G on demand via flushEvents() if the engine wants them.
-    this.eventBuffer.push(event);
-  }
-
   async putAgentInventory(agentId: string, skillIds: string[]): Promise<void> {
     const rootHash = await this.uploadBlob({ agentId, skillIds });
     this.inventoryRoots.set(agentId, rootHash);
@@ -105,29 +96,8 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     return blob.skillIds;
   }
 
-  async putAgentSocialGraph(agentId: string, memberIds: string[]): Promise<void> {
-    const rootHash = await this.uploadBlob({ agentId, memberIds });
-    this.socialGraphRoots.set(agentId, rootHash);
-    this.socialGraphCache.set(agentId, memberIds);
-  }
-
-  async getAgentSocialGraph(agentId: string): Promise<string[]> {
-    const cached = this.socialGraphCache.get(agentId);
-    if (cached) return cached;
-    const rootHash = this.socialGraphRoots.get(agentId);
-    if (!rootHash) return [];
-    const blob = await this.downloadBlob<{ agentId: string; memberIds: string[] }>(rootHash);
-    if (!blob) return [];
-    this.socialGraphCache.set(agentId, blob.memberIds);
-    return blob.memberIds;
-  }
-
   // --- engine helpers (not on the IStorageAdapter interface) ---
 
-  /**
-   * Engine seeds the rootHash map on agent boot so the agent can read inherited
-   * skills. Without this, listSkills() would only return skills written in-process.
-   */
   seedSkillRoot(skillId: string, rootHash: string): void {
     this.skillRoots.set(skillId, rootHash);
   }
@@ -140,27 +110,6 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
   /** Snapshot of the in-memory rootHash map. */
   getAllSkillRoots(): Record<string, string> {
     return Object.fromEntries(this.skillRoots);
-  }
-
-  /** Inspect the in-memory event buffer. */
-  getEventBuffer(): readonly DomainEvent[] {
-    return this.eventBuffer;
-  }
-
-  /** Optional: persist the entire event buffer as one blob. Returns rootHash. */
-  async flushEvents(): Promise<{ rootHash: string; count: number } | null> {
-    if (this.eventBuffer.length === 0) return null;
-    const indexer = this.getIndexer();
-    const signer = await this.getSigner();
-    const bytes = new TextEncoder().encode(JSON.stringify(this.eventBuffer));
-    const data = new MemData(bytes);
-    // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
-    const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
-    if (err) throw err;
-    if (!result?.rootHash) throw new Error("0G Storage flushEvents returned no rootHash");
-    const count = this.eventBuffer.length;
-    this.eventBuffer.length = 0;
-    return { rootHash: result.rootHash, count };
   }
 
   // --- internals ---

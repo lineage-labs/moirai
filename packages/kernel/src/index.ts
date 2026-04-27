@@ -15,7 +15,6 @@ export type {
   InferOptions,
   InferResult,
   PeerMessageHandler,
-  PersistedEvent,
 } from "./interfaces.js";
 
 export type {

@@ -15,7 +15,6 @@ type Scoreboard = {
   skillsAccepted: number;
   skillsLearned: number;
   skillsInherited: number;
-  hiddenRulesDiscovered: number;
   foodGathered: number;
   deaths: number;
   spawns: number;
@@ -53,20 +52,15 @@ function formatEvent(event: DomainEvent): string {
       return `learned skill ${String(p.skillId ?? "?")}`;
     case EventType.SKILL_INHERITED:
       return `inherited skill ${String(p.skillId ?? "?")}`;
-    case EventType.AXL_MESSAGE:
-      return `axl message -> ${String(p.to ?? "?")}`;
+    case EventType.AXL_BROADCAST:
+    case EventType.AXL_WHISPER:
+      return `axl message -> ${String(p.to ?? "broadcast")}`;
     case EventType.AGENT_DIED:
       return `agent died (${String(p.reason ?? "unknown")})`;
     case EventType.AGENT_SPAWNED:
       return `agent spawned (${String(p.personalityId ?? "unknown")})`;
-    case EventType.ACTIVITY_STARTED:
-      return `activity ${String(p.activity ?? "?")} started`;
-    case EventType.ACTIVITY_INTERRUPTED:
-      return `activity ${String(p.activity ?? "?")} interrupted by crisis ${String(p.crisisId ?? "?")}`;
     case EventType.FOOD_GATHERED:
       return `${String(p.method ?? "UNKNOWN")} gathered ${String(p.yield ?? "?")}`;
-    case EventType.HIDDEN_RULE_DISCOVERED:
-      return `hidden rule discovered: ${String(p.ruleId ?? "?")}`;
     case EventType.EPISODE_LOADED:
       return `episode loaded: ${String(p.episodeId ?? "?")}`;
     case EventType.EPISODE_SAVED:
@@ -78,11 +72,7 @@ function formatEvent(event: DomainEvent): string {
 
 function shouldPrint(event: DomainEvent, mode: SimMode): boolean {
   if (mode === "verbose") return true;
-  return (
-    event.type !== EventType.WORLD_TICK &&
-    event.type !== EventType.CURIOSITY_PEAK &&
-    event.type !== EventType.SELF_EVAL_STARTED
-  );
+  return event.type !== EventType.WORLD_TICK && event.type !== EventType.SELF_EVAL_STARTED;
 }
 
 function printHeader(mode: SimMode, worldId: string, agentIds: string[], tickIntervalMs: number, maxTicks: number): void {
@@ -105,13 +95,13 @@ function phaseFor(eventType: EventType): DemoPhase | undefined {
   ) {
     return "evolution";
   }
-  if (eventType === EventType.AXL_MESSAGE || eventType === EventType.SKILL_TAUGHT || eventType === EventType.SKILL_LEARNED) {
+  if (eventType === EventType.AXL_WHISPER || eventType === EventType.AXL_BROADCAST || eventType === EventType.SKILL_TAUGHT || eventType === EventType.SKILL_LEARNED) {
     return "teaching";
   }
   if (eventType === EventType.SKILL_INHERITED || eventType === EventType.AGENT_DIED || eventType === EventType.AGENT_SPAWNED) {
     return "inheritance";
   }
-  if (eventType === EventType.ACTIVITY_STARTED || eventType === EventType.FOOD_GATHERED || eventType === EventType.HIDDEN_RULE_DISCOVERED) {
+  if (eventType === EventType.FOOD_GATHERED) {
     return "village";
   }
   return undefined;
@@ -139,7 +129,6 @@ function newScoreboard(): Scoreboard {
     skillsAccepted: 0,
     skillsLearned: 0,
     skillsInherited: 0,
-    hiddenRulesDiscovered: 0,
     foodGathered: 0,
     deaths: 0,
     spawns: 0,
@@ -163,9 +152,6 @@ function updateScoreboard(board: Scoreboard, event: DomainEvent): void {
       break;
     case EventType.SKILL_INHERITED:
       board.skillsInherited += 1;
-      break;
-    case EventType.HIDDEN_RULE_DISCOVERED:
-      board.hiddenRulesDiscovered += 1;
       break;
     case EventType.FOOD_GATHERED: {
       const y = Number(event.payload.yield ?? 0);
@@ -234,7 +220,6 @@ function printRecap(board: Scoreboard, tick: number): void {
   console.log(` evolution             : ${board.skillsAccepted} skills accepted`);
   console.log(` knowledge transfer    : ${board.skillsLearned} learned / ${board.skillsInherited} inherited`);
   console.log(` village economy       : ${board.foodGathered} food gathered`);
-  console.log(` hidden rules found    : ${board.hiddenRulesDiscovered}`);
   console.log(` lifecycle             : ${board.spawns} spawns / ${board.deaths} deaths`);
   console.log("====================================================");
 }

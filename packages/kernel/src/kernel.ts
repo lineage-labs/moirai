@@ -1,6 +1,4 @@
 import type {
-  AgentContext,
-  ComputeReceipt,
   Crisis,
   DomainEvent,
   Environment,
@@ -51,16 +49,9 @@ export class EvolveError extends Error {
 
 /** What the kernel team's `createKernel()` accepts at construction time. */
 export type KernelConfig = {
-  // Runtime-centric shape (agent-runtime)
   agentId?: string;
   personality?: Personality;
   environment?: Environment;
-  adapters?: {
-    compute: IComputeAdapter;
-    storage: IStorageAdapter;
-    net: INetworkAdapter;
-  };
-  // Kernel-impl-centric shape
   compute?: IComputeAdapter;
   storage?: IStorageAdapter;
   network?: INetworkAdapter;
