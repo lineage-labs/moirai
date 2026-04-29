@@ -8,4 +8,9 @@ export type Personality = {
     reasoning?: string;
     selfEval?: string;
   };
+  inventory?: string[];
+  hunger?: {
+    rate: number;      // hunger units gained per tick
+    threshold: number; // hunger level at which agent dies
+  };
 };

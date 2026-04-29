@@ -49,18 +49,24 @@ export class AxlAdapter implements INetworkAdapter {
     const gossipOpts: ConstructorParameters<typeof Gossip>[0] = {
       axlUrl: this.cfg.axlUrl,
       keyPair,
+      // Short intervals so cross-node subscription tables sync within ~1s of boot.
+      // Default axl-pubsub advertise/poll intervals are too long for a demo scenario
+      // where crises arrive within seconds of agents starting.
+      pollIntervalMs: this.cfg.pollIntervalMs ?? 500,
+      advertiseIntervalMs: this.cfg.advertiseIntervalMs ?? 1000,
     };
-    if (this.cfg.pollIntervalMs !== undefined) gossipOpts.pollIntervalMs = this.cfg.pollIntervalMs;
-    if (this.cfg.advertiseIntervalMs !== undefined)
-      gossipOpts.advertiseIntervalMs = this.cfg.advertiseIntervalMs;
     if (this.cfg.subscriptionTtlMs !== undefined)
       gossipOpts.subscriptionTtlMs = this.cfg.subscriptionTtlMs;
 
     this.gossip = new Gossip(gossipOpts);
-    if (process.env.AXL_DEBUG === "1") {
-      this.gossip.on("error", (err: unknown) => {
+    // Always handle errors to prevent unhandled EventEmitter throws when AXL is unreachable.
+    // Per spec §12: agents work solo during AXL partitions — errors are logged, not thrown.
+    this.gossip.on("error", (err: unknown) => {
+      if (process.env.AXL_DEBUG === "1") {
         console.error(`[AxlAdapter:${this.cfg.selfId}] gossip error:`, err);
-      });
+      }
+    });
+    if (process.env.AXL_DEBUG === "1") {
       this.gossip.on("peer-joined", (p: { pubkey: string; topics: string[] }) => {
         console.log(`[AxlAdapter:${this.cfg.selfId}] peer-joined ${p.pubkey} topics=${JSON.stringify(p.topics)}`);
       });

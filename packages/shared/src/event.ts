@@ -13,6 +13,7 @@ export type AgentSpawnedEvent = EventBase & { kind: "AGENT_SPAWNED"; payload: { 
 export type AgentDiedEvent = EventBase & { kind: "AGENT_DIED"; payload: { reason: string } };
 export type CrisisStartedEvent = EventBase & { kind: "CRISIS_STARTED"; payload: Crisis };
 export type CrisisResolvedEvent = EventBase & { kind: "CRISIS_RESOLVED"; payload: { crisisId: string } };
+export type CrisisOverEvent = EventBase & { kind: "CRISIS_OVER"; payload: { crisisId: string; survived: string[]; killed: string[] } };
 export type ReasoningStartedEvent = EventBase & { kind: "REASONING_STARTED"; payload: { crisisId: string } };
 export type SkillProposedEvent = EventBase & { kind: "SKILL_PROPOSED"; payload: { candidate: CandidateSkill } };
 export type SelfEvalStartedEvent = EventBase & { kind: "SELF_EVAL_STARTED"; payload: { candidateName: string } };
@@ -23,19 +24,24 @@ export type AxlMessageEvent = EventBase & { kind: "AXL_MESSAGE"; payload: { from
 export type SkillTaughtEvent = EventBase & { kind: "SKILL_TAUGHT"; payload: { to: AgentId; skillId: string } };
 export type SkillLearnedEvent = EventBase & { kind: "SKILL_LEARNED"; payload: { from: AgentId; skillId: string } };
 export type SkillInheritedEvent = EventBase & { kind: "SKILL_INHERITED"; payload: { skillId: string } };
+export type SkillDeclinedEvent = EventBase & { kind: "SKILL_DECLINED"; payload: { from: AgentId; skillId: string; skillName: string; skillEffect: string; score: number; reason?: string } };
+export type AgentHungerEvent = EventBase & { kind: "AGENT_HUNGER"; payload: { hunger: number; threshold: number } };
 
 export type Event =
   | WorldTickEvent
   | AgentSpawnedEvent
   | AgentDiedEvent
+  | AgentHungerEvent
   | CrisisStartedEvent
   | CrisisResolvedEvent
+  | CrisisOverEvent
   | ReasoningStartedEvent
   | SkillProposedEvent
   | SelfEvalStartedEvent
   | SelfEvalResultEvent
   | SkillAcceptedEvent
   | SkillRejectedEvent
+  | SkillDeclinedEvent
   | AxlMessageEvent
   | SkillTaughtEvent
   | SkillLearnedEvent

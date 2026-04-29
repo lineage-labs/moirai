@@ -1,0 +1,27 @@
+{
+  "id": "savannah",
+  "physics": [
+    "lions fear pointy objects like sharpened sticks or spears",
+    "rocks can be thrown at predators to scare or injure them",
+    "sticks can be sharpened into spears or clubs",
+    "fire repels most animals including lions",
+    "loud noises and shouting can startle and scare lions away",
+    "berries and plants provide nourishment"
+  ],
+  "resources": ["rocks", "sticks", "berries", "water", "dry grass"],
+  "topology": "open",
+  "crisisSchedule": [
+    {
+      "tick": 7,
+      "type": "LION",
+      "targets": ["alice", "bob"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 40,
+      "type": "LION",
+      "targets": ["dave"],
+      "deadlineTicks": 30
+    }
+  ]
+}

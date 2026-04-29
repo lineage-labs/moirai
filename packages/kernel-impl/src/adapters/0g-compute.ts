@@ -200,18 +200,26 @@ export class ZeroGComputeAdapter implements IComputeAdapter {
     if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
     if (opts.temperature !== undefined) body.temperature = opts.temperature;
 
-    const response = await this.fetchWithTimeout(
-      `${svc.endpoint}/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(headers as unknown as Record<string, string>),
+    // Retry up to 4 times on 429 with exponential backoff (6s, 12s, 24s, 48s).
+    let response!: Response;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      response = await this.fetchWithTimeout(
+        `${svc.endpoint}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(headers as unknown as Record<string, string>),
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      },
-      this.cfg.timeoutMs ?? 60_000,
-    );
+        this.cfg.timeoutMs ?? 60_000,
+      );
+      if (response.status !== 429) break;
+      const wait = 6_000 * Math.pow(2, attempt);
+      console.warn(`[0G Compute] rate-limited, retrying in ${wait / 1000}s (attempt ${attempt + 1}/5)`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");

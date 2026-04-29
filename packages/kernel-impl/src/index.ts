@@ -1,5 +1,5 @@
-import type { Kernel, KernelConfig, CreateKernel, EvolveInput, EvolveResult } from "@moirai/kernel";
-import { evolve } from "./evolve.js";
+import type { Kernel, KernelConfig, CreateKernel, EvolveInput, EvolveResult, AdoptInput, AdoptResult } from "@moirai/kernel";
+import { evolve, evaluateAdoption } from "./evolve.js";
 
 export const createKernel: CreateKernel = async (config: KernelConfig): Promise<Kernel> => {
   const { compute, storage, network, emit } = config;
@@ -9,6 +9,9 @@ export const createKernel: CreateKernel = async (config: KernelConfig): Promise<
     net: network,
     evolve(input: EvolveInput): Promise<EvolveResult> {
       return evolve({ compute, storage, emit }, input);
+    },
+    evaluateAdoption(input: AdoptInput): Promise<AdoptResult> {
+      return evaluateAdoption({ compute }, input);
     },
   };
 };

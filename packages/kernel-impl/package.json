@@ -15,16 +15,16 @@
     "spike": "node --env-file-if-exists=../../.env --import tsx src/spike.ts"
   },
   "dependencies": {
-    "@moirai/shared": "workspace:*",
-    "@moirai/kernel": "workspace:*",
+    "@0gfoundation/0g-ts-sdk": "^1.2.6",
     "@0glabs/0g-serving-broker": "^0.7.5",
-    "@0glabs/0g-ts-sdk": "^0.3.3",
+    "@moirai/kernel": "workspace:*",
+    "@moirai/shared": "workspace:*",
     "axl-pubsub": "^0.1.0",
     "ethers": "^6.0.0"
   },
   "devDependencies": {
+    "tsx": "^4.7.0",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0",
-    "tsx": "^4.7.0"
+    "vitest": "^1.6.0"
   }
 }

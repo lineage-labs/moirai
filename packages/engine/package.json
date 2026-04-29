@@ -1,0 +1,24 @@
+{
+  "name": "@moirai/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env --import tsx/esm src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@moirai/shared": "workspace:*",
+    "@moirai/environment": "workspace:*",
+    "@moirai/personality": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/ws": "^8.5.0",
+    "@types/node": "^20.0.0"
+  }
+}

@@ -24,6 +24,15 @@ export type EvolveAcceptance = { status: "accepted"; skill: Skill };
 export type EvolveRejection = { status: "rejected"; reason: string; score: number };
 export type EvolveResult = EvolveAcceptance | EvolveRejection;
 
+export type AdoptInput = {
+  skill: Skill;
+  personality: Personality;
+  environment: Environment;
+  inventory: string[];
+};
+
+export type AdoptResult = { adopt: true; score: number } | { adopt: false; score: number; failureModes: string[] };
+
 export class EvolveError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -36,6 +45,7 @@ export interface Kernel {
   readonly storage: IStorageAdapter;
   readonly net: INetworkAdapter;
   evolve(input: EvolveInput): Promise<EvolveResult>;
+  evaluateAdoption(input: AdoptInput): Promise<AdoptResult>;
 }
 
 export type KernelConfig = {

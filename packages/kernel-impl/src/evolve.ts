@@ -4,9 +4,11 @@ import type {
   IStorageAdapter,
   EvolveInput,
   EvolveResult,
+  AdoptInput,
+  AdoptResult,
 } from "@moirai/kernel";
 import { EvolveError } from "@moirai/kernel";
-import { buildReasonPrompt, buildSelfEvalPrompt } from "./prompts.js";
+import { buildReasonPrompt, buildSelfEvalPrompt, buildSkillAdoptionEvalPrompt } from "./prompts.js";
 import { computeSkillId } from "./skill-id.js";
 import { parseCandidate, parseEval } from "./parse.js";
 
@@ -21,6 +23,26 @@ export type EvolveDeps = {
   storage: IStorageAdapter;
   emit: (event: Event) => void;
 };
+
+export async function evaluateAdoption(
+  deps: Pick<EvolveDeps, "compute">,
+  input: AdoptInput,
+): Promise<AdoptResult> {
+  const { personality, skill, environment, inventory } = input;
+  const threshold = thresholdFor(personality.risk);
+
+  const prompt = buildSkillAdoptionEvalPrompt({ environment, skill, personality, inventory });
+  const res = await deps.compute.infer(prompt, { verifiable: false });
+  const evalResp = parseEval(res.text);
+
+  const adopt = evalResp.score >= threshold;
+  const label = adopt ? "ADOPT" : `DECLINE${evalResp.failureModes.length ? ` (${evalResp.failureModes.slice(0, 2).join("; ")})` : ""}`;
+  console.error(
+    `[evaluateAdoption:${personality.id}] skill="${skill.name}" score=${evalResp.score.toFixed(3)} threshold=${threshold.toFixed(3)} → ${label}`,
+  );
+  if (adopt) return { adopt: true, score: evalResp.score };
+  return { adopt: false, score: evalResp.score, failureModes: evalResp.failureModes };
+}
 
 export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<EvolveResult> {
   const { compute, storage, emit } = deps;
@@ -52,6 +74,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
   } catch (err) {
     throw new EvolveError("failed to parse candidate skill from reasoning output", { cause: err });
   }
+  console.error(`[evolve:${context.agentId}] proposed: "${candidate.name}" | effect: ${candidate.effect} | steps: ${candidate.steps.length}`);
 
   emit({
     kind: "SKILL_PROPOSED",
@@ -68,7 +91,7 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     payload: { candidateName: candidate.name },
   });
 
-  const evalPrompt = buildSelfEvalPrompt({ environment, candidate, crisis, personality });
+  const evalPrompt = buildSelfEvalPrompt({ environment, candidate, crisis, personality, inventory: context.inventory });
   const evalRes = await compute.infer(evalPrompt, { verifiable: true });
   if (!evalRes.receipt.verifiable) {
     throw new EvolveError("hero-path self-eval fell back to non-verifiable inference");
@@ -90,6 +113,10 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
   });
 
   const threshold = thresholdFor(personality.risk);
+  console.error(`[evolve:${context.agentId}] self-eval score=${evalResp.score.toFixed(3)} threshold=${threshold.toFixed(3)} → ${evalResp.score >= threshold ? "ACCEPT" : "REJECT"}`);
+  if (evalResp.failureModes.length) {
+    console.error(`[evolve:${context.agentId}] failure modes: ${evalResp.failureModes.join("; ")}`);
+  }
 
   if (evalResp.score < threshold) {
     const reason = `score ${evalResp.score} < threshold ${threshold}`;
@@ -121,7 +148,9 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     },
   };
 
+  console.error(`[evolve:${context.agentId}] writing skill "${skill.name}" (${skill.id}) to 0G Storage`);
   await storage.putSkill(skill);
+  console.error(`[evolve:${context.agentId}] skill stored ✓ id=${skill.id}`);
 
   emit({
     kind: "SKILL_ACCEPTED",

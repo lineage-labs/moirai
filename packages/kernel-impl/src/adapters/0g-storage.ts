@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { Indexer, MemData } from "@0glabs/0g-ts-sdk";
+import { Indexer, MemData } from "@0gfoundation/0g-ts-sdk";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +57,11 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     const cached = this.skillCache.get(id);
     if (cached) return cached;
     const rootHash = this.skillRoots.get(id);
-    if (!rootHash) return null;
+    if (!rootHash) {
+      console.error(`[0G Storage] getSkill ${id} — no rootHash seeded`);
+      return null;
+    }
+    console.error(`[0G Storage] downloading skill ${id} rootHash=${rootHash}`);
     return this.downloadSkill(rootHash);
   }
 
@@ -117,7 +121,7 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
     const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
     if (err) throw err;
-    if (!result?.rootHash) throw new Error("0G Storage flushEvents returned no rootHash");
+    if (!result || !('rootHash' in result) || !result.rootHash) throw new Error("0G Storage flushEvents returned no rootHash");
     const count = this.eventBuffer.length;
     this.eventBuffer.length = 0;
     return { rootHash: result.rootHash, count };
@@ -149,7 +153,7 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
       // SDK ships dual-package ethers types; cast bypasses ESM/CJS identity mismatch.
       const [result, err] = await indexer.upload(data, this.cfg.rpcUrl, signer as never);
       if (err) throw err;
-      if (!result?.rootHash) throw new Error("0G Storage upload returned no rootHash");
+      if (!result || !('rootHash' in result) || !result.rootHash) throw new Error("0G Storage upload returned no rootHash");
       this.skillRoots.set(skill.id, result.rootHash);
       this.skillCache.set(skill.id, skill);
       return { id: skill.id };
@@ -172,10 +176,14 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     const dir = await mkdtemp(join(tmpdir(), "moirai-skill-"));
     const filePath = join(dir, "skill.json");
     try {
-      const err = await indexer.download(rootHash, filePath, false);
-      if (err) throw err;
+      const err = await indexer.download(rootHash, filePath, true);
+      if (err) {
+        console.error(`[0G Storage] download failed rootHash=${rootHash}:`, err);
+        throw err;
+      }
       const text = await readFile(filePath, "utf8");
       const skill = JSON.parse(text) as Skill;
+      console.error(`[0G Storage] download ✓ skill="${skill.name}" (${skill.id})`);
       this.skillCache.set(skill.id, skill);
       return skill;
     } finally {
