@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -9,6 +9,8 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useStore, connectWs } from "./store";
+import savannahBg from "./background.png";
+import { EventPanel } from "./EventPanel";
 
 const WS_URL = import.meta.env["VITE_WS_URL"] ?? "ws://localhost:8765";
 
@@ -75,7 +77,8 @@ function AgentNode({ data }: {
 const nodeTypes = { agent: AgentNode };
 
 export default function App() {
-  const { agents, skills, crises, edges, events, tick } = useStore();
+  const { agents, crises, edges, events, tick } = useStore();
+  const [showPanel, setShowPanel] = useState(true);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -109,27 +112,15 @@ export default function App() {
   const activeCrises = Object.values(crises).filter((c) => !c.resolved);
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: "#0a0a0a" }}>
-      {/* Left: Agent graph */}
-      <div style={{ flex: "0 0 60%", borderRight: "1px solid #222" }}>
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #222", display: "flex", gap: 16, alignItems: "center" }}>
-          <span style={{ color: "#7c3aed", fontWeight: "bold", fontSize: 16 }}>emergent-civ</span>
-          <span style={{ color: "#555", fontSize: 12 }}>tick {tick}</span>
-          {activeCrises.map((c) => (
-            <span
-              key={c.id}
-              style={{
-                background: "#7f1d1d",
-                color: "#fca5a5",
-                borderRadius: 4,
-                padding: "2px 8px",
-                fontSize: 11,
-              }}
-            >
-              🦁 {c.type} → {c.targets.join(", ")}
-            </span>
-          ))}
-        </div>
+    <div style={{
+      position: "relative", width: "100vw", height: "100vh", overflow: "hidden",
+      backgroundImage: `url(${savannahBg})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    }}>
+
+      {/* ReactFlow fills the entire canvas — no background of its own */}
+      <div style={{ position: "absolute", inset: 0 }}>
         <ReactFlow
           nodes={nodes}
           edges={rfEdges}
@@ -137,112 +128,83 @@ export default function App() {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          style={{ background: "#0f0f1a" }}
+          style={{ background: "transparent" }}
         >
-          <Background color="#1e1e2e" />
           <Controls />
         </ReactFlow>
       </div>
 
-      {/* Right: Event feed + Receipts */}
-      <div style={{ flex: "0 0 40%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Receipts Gallery */}
-        <div style={{ borderBottom: "1px solid #222", padding: 12, maxHeight: "35%", overflowY: "auto" }}>
-          <div style={{ color: "#7c3aed", fontSize: 12, marginBottom: 8, fontWeight: "bold" }}>
-            RECEIPTS GALLERY ({Object.keys(skills).length})
-          </div>
-          {Object.values(skills).length === 0 && (
-            <div style={{ color: "#444", fontSize: 11 }}>Waiting for first skill...</div>
-          )}
-          {Object.values(skills).map((s) => (
-            <div
-              key={s.id}
-              style={{
-                background: "#111",
-                border: "1px solid #2a2a4a",
-                borderRadius: 6,
-                padding: "6px 10px",
-                marginBottom: 6,
-                fontSize: 11,
-              }}
-            >
-              <div style={{ color: "#a5b4fc", fontWeight: "bold" }}>{s.name}</div>
-              <div style={{ color: "#555", marginTop: 2 }}>
-                by {s.inventedBy} · tick {s.tick}
-                {s.verifiable && <span style={{ color: "#4ade80", marginLeft: 6 }}>✓ verified</span>}
-                {!s.verifiable && <span style={{ color: "#f59e0b", marginLeft: 6 }}>⚠ unverified</span>}
-              </div>
-              {s.reasonReceipt && (
-                <div style={{ color: "#333", fontSize: 10, marginTop: 2, wordBreak: "break-all" }}>
-                  reason: {s.reasonReceipt.slice(0, 24)}…
-                </div>
-              )}
-              {s.selfEvalReceipt && (
-                <div style={{ color: "#333", fontSize: 10, wordBreak: "break-all" }}>
-                  eval: {s.selfEvalReceipt.slice(0, 24)}… score:{" "}
-                  <span style={{ color: s.selfEvalScore && s.selfEvalScore >= 0.6 ? "#4ade80" : "#f87171" }}>
-                    {s.selfEvalScore?.toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      {/* Tick + crisis bar — floats top-left */}
+      <div style={{
+        position: "absolute", top: 12, left: 12,
+        display: "flex", gap: 10, alignItems: "center",
+        background: "rgba(10,6,2,0.55)", backdropFilter: "blur(8px)",
+        borderRadius: 8, padding: "5px 12px",
+        border: "1px solid rgba(255,255,255,0.10)",
+      }}>
+        <span style={{ color: "#e8d8b8", fontWeight: 600, fontSize: 13 }}>emergent-civ</span>
+        <span style={{ color: "#7a6848", fontSize: 11 }}>tick {tick}</span>
+        {activeCrises.map((c) => (
+          <span key={c.id} style={{ background: "rgba(180,60,30,0.6)", color: "#fca5a5", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
+            🦁 {c.type} → {c.targets.join(", ")}
+          </span>
+        ))}
+      </div>
 
-        {/* Event Feed */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-          <div style={{ color: "#7c3aed", fontSize: 12, marginBottom: 8, fontWeight: "bold" }}>
-            EVENT FEED
-          </div>
-          <div style={{ display: "flex", flexDirection: "column-reverse" }}>
-            {[...events].reverse().map((ev, i) => (
-              <div
-                key={i}
-                style={{
-                  fontSize: 10,
-                  padding: "2px 0",
-                  color: eventColor(ev.kind),
-                  borderBottom: "1px solid #111",
-                }}
-              >
-                <span style={{ color: "#333", marginRight: 6 }}>t{ev.tick}</span>
-                <span style={{ color: "#555", marginRight: 6 }}>[{ev.actorId}]</span>
-                <span>{ev.kind}</span>
-                {ev.kind === "CRISIS_OVER" && ev.payload && (
-                  <span style={{ color: "#555", marginLeft: 6 }}>
-                    {(ev.payload as { killed: string[] }).killed.length > 0 && (
-                      <span style={{ color: "#ef4444" }}>✗ {(ev.payload as { killed: string[] }).killed.join(", ")}</span>
-                    )}
-                    {(ev.payload as { survived: string[] }).survived.length > 0 && (
-                      <span style={{ color: "#4ade80", marginLeft: 6 }}>✓ {(ev.payload as { survived: string[] }).survived.join(", ")}</span>
-                    )}
-                  </span>
-                )}
-                {ev.kind === "SKILL_DECLINED" && ev.payload && (
-                  <span style={{ color: "#555", marginLeft: 6 }}>
-                    "{(ev.payload as { skillName: string }).skillName}" score={(ev.payload as { score: number }).score.toFixed(2)}
-                    {(ev.payload as { reason?: string }).reason && (
-                      <span style={{ color: "#444", marginLeft: 4 }}>— {(ev.payload as { reason: string }).reason}</span>
-                    )}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Event panel + vertical toggle tab — floats right */}
+      <div style={{
+        position: "absolute", top: 12, right: 12, bottom: 12,
+        display: "flex", flexDirection: "row", alignItems: "stretch", gap: 0,
+      }}>
+        {showPanel && (
+          <EventPanel
+            events={events}
+            onHide={() => setShowPanel(false)}
+            style={{ width: 430, borderRadius: "8px 0 0 8px" }}
+          />
+        )}
+
+        {/* Vertical tab — always visible */}
+        <button
+          onClick={() => setShowPanel(p => !p)}
+          title={showPanel ? "Hide event log" : "Show event log"}
+          style={{
+            width: 24,
+            background: "rgba(18,16,14,0.52)",
+            border: "1px solid rgba(255,255,255,0.13)",
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.35), 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.09)",
+            borderRadius: showPanel ? "0 8px 8px 0" : 8,
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            padding: 0,
+            flexShrink: 0,
+            alignSelf: "flex-start",
+            height: 120,
+          }}
+        >
+          <span style={{
+            writingMode: "vertical-rl",
+            textOrientation: "mixed",
+            fontSize: 9,
+            letterSpacing: 2,
+            fontWeight: 500,
+            color: "#7a6a50",
+            fontFamily: "'DM Sans', system-ui, sans-serif",
+            textTransform: "uppercase",
+            userSelect: "none",
+          }}>EVENTS</span>
+          <span style={{ fontSize: 10, color: "#9a8a70", userSelect: "none" }}>
+            {showPanel ? "▶" : "◀"}
+          </span>
+        </button>
       </div>
     </div>
   );
 }
 
-function eventColor(kind: string): string {
-  if (kind.startsWith("CRISIS")) return "#f87171";
-  if (kind === "CRISIS_OVER") return "#f87171";
-  if (kind === "SKILL_DECLINED") return "#fb923c";
-  if (kind.startsWith("SKILL")) return "#4ade80";
-  if (kind.startsWith("AXL") || kind.startsWith("SKILL_TAUGHT") || kind.startsWith("SKILL_LEARNED")) return "#a78bfa";
-  if (kind === "AGENT_DIED") return "#f59e0b";
-  if (kind === "AGENT_SPAWNED") return "#60a5fa";
-  if (kind === "REASONING_STARTED") return "#facc15";
-  return "#444";
-}

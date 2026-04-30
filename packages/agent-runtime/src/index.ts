@@ -90,11 +90,11 @@ async function handleLearn(skillId: string, rootHash: string, from: string): Pro
     emit(ev);
     await kernel.storage.appendEvent(ev);
 
-    // Resolve crises that this agent couldn't solve alone but can now with the learned skill
+    // Agent can now handle a previously failed crisis thanks to the learned skill
     for (const [crisisId, crisis] of failedCrises) {
       if (skillResolvesCrisis(skill, crisis, environment)) {
         failedCrises.delete(crisisId);
-        emit({ kind: "CRISIS_RESOLVED", tick, actorId: agentId, payload: { crisisId } });
+        emit({ kind: "AGENT_RESCUED", tick, actorId: agentId, payload: { crisisId, crisisType: crisis.type, skillUsed: skill.name } });
       }
     }
   } finally {
@@ -155,7 +155,7 @@ async function handleTick(newTick: number, incomingCrises: Crisis[]): Promise<vo
     const match = knownSkills.find((s) => skillResolvesCrisis(s, crisis, environment));
     if (match) {
       activeCrises.delete(crisisId);
-      emit({ kind: "CRISIS_RESOLVED", tick, actorId: agentId, payload: { crisisId } });
+      emit({ kind: "AGENT_RESCUED", tick, actorId: agentId, payload: { crisisId, crisisType: crisis.type, skillUsed: match.name } });
       continue;
     }
 
@@ -210,7 +210,7 @@ async function handleTick(newTick: number, incomingCrises: Crisis[]): Promise<vo
           });
         }
 
-        emit({ kind: "CRISIS_RESOLVED", tick, actorId: agentId, payload: { crisisId } });
+        emit({ kind: "AGENT_RESCUED", tick, actorId: agentId, payload: { crisisId, crisisType: crisis.type, skillUsed: result.skill.name } });
       }
     } catch (err) {
       console.error(`[${agentId}] evolve error:`, err instanceof Error ? err.message : err);

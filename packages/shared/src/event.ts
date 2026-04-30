@@ -9,10 +9,11 @@ export type EventBase = {
 };
 
 export type WorldTickEvent = EventBase & { kind: "WORLD_TICK" };
-export type AgentSpawnedEvent = EventBase & { kind: "AGENT_SPAWNED"; payload: { personalityId: string } };
+export type AgentSpawnedEvent = EventBase & { kind: "AGENT_SPAWNED"; payload: { personalityId: string; traits?: string[] } };
 export type AgentDiedEvent = EventBase & { kind: "AGENT_DIED"; payload: { reason: string } };
 export type CrisisStartedEvent = EventBase & { kind: "CRISIS_STARTED"; payload: Crisis };
-export type CrisisResolvedEvent = EventBase & { kind: "CRISIS_RESOLVED"; payload: { crisisId: string } };
+export type CrisisResolvedEvent = EventBase & { kind: "CRISIS_RESOLVED"; payload: { crisisId: string; survived?: string[]; died?: string[]; totalAlive?: number } };
+export type AgentRescuedEvent = EventBase & { kind: "AGENT_RESCUED"; payload: { crisisId: string; crisisType: string; skillUsed?: string } };
 export type CrisisOverEvent = EventBase & { kind: "CRISIS_OVER"; payload: { crisisId: string; survived: string[]; killed: string[] } };
 export type ReasoningStartedEvent = EventBase & { kind: "REASONING_STARTED"; payload: { crisisId: string } };
 export type SkillProposedEvent = EventBase & { kind: "SKILL_PROPOSED"; payload: { candidate: CandidateSkill } };
@@ -34,6 +35,7 @@ export type Event =
   | AgentHungerEvent
   | CrisisStartedEvent
   | CrisisResolvedEvent
+  | AgentRescuedEvent
   | CrisisOverEvent
   | ReasoningStartedEvent
   | SkillProposedEvent

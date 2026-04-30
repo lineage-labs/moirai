@@ -8,6 +8,7 @@ type EventKind =
   | "AGENT_HUNGER"
   | "CRISIS_STARTED"
   | "CRISIS_RESOLVED"
+  | "AGENT_RESCUED"
   | "REASONING_STARTED"
   | "SKILL_PROPOSED"
   | "SELF_EVAL_STARTED"
@@ -36,6 +37,7 @@ export type AgentInfo = {
   status: "idle" | "reasoning" | "crisis";
   position: { x: number; y: number };
   hunger?: { current: number; threshold: number };
+  traits?: string[];
 };
 
 export type SkillInfo = {
@@ -114,12 +116,14 @@ export const useStore = create<Store>((set, get) => ({
 
       if (ev.kind === "AGENT_SPAWNED") {
         const count = Object.keys(agents).length;
+        const traits = (ev.payload as { traits?: string[] })?.traits;
         agents[ev.actorId] = {
           id: ev.actorId,
           alive: true,
           knownSkillIds: [],
           status: "idle",
           position: positionFor(ev.actorId, count),
+          traits,
         };
       }
 
@@ -231,9 +235,13 @@ export const useStore = create<Store>((set, get) => ({
   },
 }));
 
+let _ws: WebSocket | null = null;
+
 export function connectWs(url: string): void {
-  const ws = new WebSocket(url);
-  ws.onmessage = (e) => {
+  // Prevent stacking connections on hot-reload or double-invocation
+  if (_ws && (_ws.readyState === WebSocket.CONNECTING || _ws.readyState === WebSocket.OPEN)) return;
+  _ws = new WebSocket(url);
+  _ws.onmessage = (e) => {
     try {
       const ev = JSON.parse(e.data as string) as GameEvent;
       useStore.getState().handleEvent(ev);
@@ -241,5 +249,5 @@ export function connectWs(url: string): void {
       // ignore
     }
   };
-  ws.onclose = () => setTimeout(() => connectWs(url), 2000);
+  _ws.onclose = () => setTimeout(() => connectWs(url), 2000);
 }

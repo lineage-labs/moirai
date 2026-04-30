@@ -160,7 +160,7 @@ function spawnAgent(id: string, inheritedSkillRoots: Record<string, string> = {}
     }
   });
 
-  broadcast({ kind: "AGENT_SPAWNED", tick, actorId: id, payload: { personalityId: id } });
+  broadcast({ kind: "AGENT_SPAWNED", tick, actorId: id, payload: { personalityId: id, traits: personality.traits ?? [] } });
 }
 
 // Notify all agents of the current peer list (called after all initial agents are spawned)
@@ -188,6 +188,7 @@ function agentCanResolve(agentId: string, crisis: Crisis): boolean {
   return false;
 }
 
+
 function checkCrisisResolution(agentId: string): void {
   for (const [crisisId, crisis] of activeCrises) {
     if (resolvedCrises.has(crisisId)) continue;
@@ -209,7 +210,10 @@ function checkCrisisResolution(agentId: string): void {
       resolvedCrises.add(crisisId);
       activeCrises.delete(crisisId);
       perCrisisResolvedAgents.delete(crisisId);
-      broadcast({ kind: "CRISIS_RESOLVED", tick, actorId: "engine", payload: { crisisId } });
+      const survived = crisis.targets.filter(id => agents.get(id)?.alive);
+      const died = crisis.targets.filter(id => !agents.get(id)?.alive);
+      const totalAlive = [...agents.values()].filter(a => a.alive).length;
+      broadcast({ kind: "CRISIS_RESOLVED", tick, actorId: "engine", payload: { crisisId, survived, died, totalAlive } });
     }
   }
 }
