@@ -289,7 +289,7 @@ function doTick(): void {
   for (const entry of environment.crisisSchedule) {
     if (entry.tick !== tick) continue;
     const crisisId = `${entry.type}-${tick}`;
-    const targets = entry.targets ?? [...agents.keys()];
+    const targets = (entry.targets ?? [...agents.keys()]).filter(id => agents.get(id)?.alive);
     const crisis: Crisis = {
       id: crisisId,
       type: entry.type,
@@ -332,7 +332,7 @@ createServer((req, res) => {
       targets?: string[];
     };
     const crisisId = `${body.type}-manual-${tick}`;
-    const targets = body.targets ?? [...agents.keys()];
+    const targets = (body.targets ?? [...agents.keys()]).filter(id => agents.get(id)?.alive);
     const crisis: Crisis = {
       id: crisisId,
       type: body.type.toUpperCase(),
