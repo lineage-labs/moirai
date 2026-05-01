@@ -10,6 +10,7 @@ import { useStore, connectWs } from "./store";
 import { EventPanel } from "./EventPanel";
 import { Scene3D } from "./Scene3D";
 import { AgentOverlay } from "./AgentOverlay";
+import { PauseControl } from "./PauseControl";
 import savannahBg from "./background.png";
 
 const WS_URL = import.meta.env["VITE_WS_URL"] ?? "ws://localhost:8765";
@@ -117,6 +118,7 @@ export default function App() {
       }}>
         <span style={{ color: "#ffe0a3", fontWeight: 600, fontSize: 10, fontFamily: "'Press Start 2P', monospace" }}>moirai</span>
         <span style={{ color: "#c5a66d", fontSize: 13, fontFamily: "'VT323', monospace" }}>tick {tick}</span>
+        <PauseControl />
         {activeCrises.map((c) => (
           <span
             key={c.id}

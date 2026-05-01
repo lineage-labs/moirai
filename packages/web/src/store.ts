@@ -295,3 +295,9 @@ export function connectWs(url: string): void {
   };
   _ws.onclose = () => setTimeout(() => connectWs(url), 2000);
 }
+
+export function sendWs(msg: unknown): void {
+  if (_ws?.readyState === WebSocket.OPEN) {
+    _ws.send(JSON.stringify(msg));
+  }
+}

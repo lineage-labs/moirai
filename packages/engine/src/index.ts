@@ -33,6 +33,7 @@ const environment = loadEnvironment();
 const allEvents: Event[] = [];
 const skills = new Map<string, { skill: Skill; rootHash: string }>();
 let tick = 0;
+let paused = false;
 
 // --- WebSocket broadcaster ---
 const wss = new WebSocketServer({ port: WS_PORT });
@@ -44,6 +45,13 @@ wss.on("connection", (ws) => {
       (ws as WebSocket).send(JSON.stringify(ev));
     }
   }
+  ws.on("message", (data) => {
+    try {
+      const msg = JSON.parse(data.toString()) as { kind: string };
+      if (msg.kind === "PAUSE") { paused = true; console.log("[engine] world PAUSED"); }
+      else if (msg.kind === "RESUME") { paused = false; console.log("[engine] world RESUMED"); }
+    } catch { /* ignore malformed */ }
+  });
 });
 
 function broadcast(event: Event): void {
@@ -136,13 +144,16 @@ function spawnAgent(id: string, inheritedSkillRoots: Record<string, string> = {}
   });
 
   proc.on("exit", (code) => {
+    const wasAlive = entry.alive;
     entry.alive = false;
-    broadcast({
-      kind: "AGENT_DIED",
-      tick,
-      actorId: id,
-      payload: { reason: code === 0 ? "natural" : `exit ${code}` },
-    });
+    if (wasAlive) {
+      broadcast({
+        kind: "AGENT_DIED",
+        tick,
+        actorId: id,
+        payload: { reason: code === 0 ? "natural" : `exit ${code}` },
+      });
+    }
 
     // Spawn next replacement inheriting the dying agent's skills and cause of death
     if (replacementIdx < REPLACEMENT_POOL.length) {
@@ -224,6 +235,7 @@ let replacementIdx = 0;
 
 // --- Tick loop ---
 function doTick(): void {
+  if (paused) return;
   tick++;
   broadcast({ kind: "WORLD_TICK", tick, actorId: "engine" });
 
@@ -240,6 +252,7 @@ function doTick(): void {
     if (agent.hunger >= agent.hungerConfig.threshold) {
       agent.proc.stdin!.write(JSON.stringify({ kind: "DIE", reason: "hunger" }) + "\n");
       agent.alive = false;
+      broadcast({ kind: "AGENT_DIED", tick, actorId: agent.id, payload: { reason: "hunger" } });
     }
   }
 
@@ -261,6 +274,7 @@ function doTick(): void {
         killed.push(targetId);
         agent.proc.stdin!.write(JSON.stringify({ kind: "DIE", reason: `crisis:${crisis.type}` }) + "\n");
         agent.alive = false;
+        broadcast({ kind: "AGENT_DIED", tick, actorId: targetId, payload: { reason: `crisis:${crisis.type}` } });
       }
     }
 
