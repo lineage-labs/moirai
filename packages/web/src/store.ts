@@ -65,6 +65,14 @@ export type EdgeInfo = {
   label: string;
 };
 
+export type ScreenPosition = { x: number; y: number };
+
+export type LionState = {
+  active: boolean;
+  crisisId?: string;
+  targets: string[];
+};
+
 type Store = {
   agents: Record<string, AgentInfo>;
   events: GameEvent[];
@@ -72,22 +80,32 @@ type Store = {
   crises: Record<string, CrisisInfo>;
   edges: EdgeInfo[];
   tick: number;
+  screenPositions: Record<string, ScreenPosition>;
+  lionState: LionState;
 
   handleEvent(ev: GameEvent): void;
+  setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
 };
 
 const POSITIONS: Record<string, { x: number; y: number }> = {
-  alice: { x: 150, y: 120 },
-  bob: { x: 420, y: 80 },
-  charlie: { x: 650, y: 200 },
-  dave: { x: 300, y: 320 },
-  eve: { x: 500, y: 350 },
+  alice: { x: 80, y: 300 },
+  bob: { x: 310, y: 70 },
+  charlie: { x: 540, y: 295 },
+  dave: { x: 90, y: 500 },
+  eve: { x: 440, y: 430 },
 };
 
 function positionFor(id: string, agentCount: number): { x: number; y: number } {
   if (POSITIONS[id]) return POSITIONS[id]!;
   const angle = (agentCount * 2 * Math.PI) / 5;
-  return { x: 400 + 250 * Math.cos(angle), y: 250 + 180 * Math.sin(angle) };
+  return { x: 300 + 220 * Math.cos(angle), y: 300 + 190 * Math.sin(angle) };
+}
+
+function lionStateFromCrises(crises: Record<string, CrisisInfo>): LionState {
+  const activeLion = Object.values(crises).find((crisis) => !crisis.resolved && crisis.type.toLowerCase() === "lion");
+  return activeLion
+    ? { active: true, crisisId: activeLion.id, targets: activeLion.targets }
+    : { active: false, targets: [] };
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -97,6 +115,11 @@ export const useStore = create<Store>((set, get) => ({
   crises: {},
   edges: [],
   tick: 0,
+  screenPositions: {},
+  lionState: { active: false, targets: [] },
+  setScreenPositions(screenPositions) {
+    set({ screenPositions });
+  },
 
   handleEvent(ev: GameEvent) {
     set((state) => {
@@ -104,6 +127,7 @@ export const useStore = create<Store>((set, get) => ({
       const skills = { ...state.skills };
       const crises = { ...state.crises };
       const edges = [...state.edges];
+      let lionState = state.lionState;
       // AGENT_HUNGER fires every tick — update state but don't spam the feed
       const events = ev.kind === "AGENT_HUNGER"
         ? state.events
@@ -141,6 +165,9 @@ export const useStore = create<Store>((set, get) => ({
       if (ev.kind === "CRISIS_STARTED" && ev.payload) {
         const p = ev.payload as { id: string; type: string; targets: string[] };
         crises[p.id] = { id: p.id, type: p.type, targets: p.targets, resolved: false };
+        if (p.type.toLowerCase() === "lion") {
+          lionState = { active: true, crisisId: p.id, targets: p.targets };
+        }
         for (const t of p.targets) {
           const a = agents[t];
           if (a?.alive) agents[t] = { ...a, status: "crisis" };
@@ -148,10 +175,22 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       if (ev.kind === "CRISIS_RESOLVED" && ev.payload) {
-        const crisisId = ev.payload["crisisId"] as string;
+        const resolved = ev.payload as { crisisId: string; survived?: string[]; died?: string[] };
+        const crisisId = resolved.crisisId;
+        const c = crises[crisisId];
         if (ev.actorId === "engine") {
-          const c = crises[crisisId];
           if (c) crises[crisisId] = { ...c, resolved: true };
+          if (lionState.crisisId === crisisId) {
+            lionState = { active: false, targets: [] };
+          }
+        }
+        const resetIds = [...(resolved.survived ?? []), ...(resolved.died ?? [])];
+        for (const id of resetIds.length > 0 ? resetIds : c?.targets ?? []) {
+          const a = agents[id];
+          if (!a) continue;
+          agents[id] = resolved.died?.includes(id)
+            ? { ...a, alive: false, status: "idle" }
+            : { ...a, status: "idle" };
         }
         const a = agents[ev.actorId];
         if (a) agents[ev.actorId] = { ...a, status: "idle" };
@@ -170,6 +209,9 @@ export const useStore = create<Store>((set, get) => ({
         for (const id of killed) {
           const a = agents[id];
           if (a) agents[id] = { ...a, alive: false, status: "idle" };
+        }
+        if (lionState.crisisId === crisisId) {
+          lionState = { active: false, targets: [] };
         }
       }
 
@@ -230,7 +272,9 @@ export const useStore = create<Store>((set, get) => ({
         }
       }
 
-      return { agents, skills, crises, edges, events, tick };
+      lionState = lionStateFromCrises(crises);
+
+      return { agents, skills, crises, edges, events, tick, lionState };
     });
   },
 }));

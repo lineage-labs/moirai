@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
 import ReactFlow, {
-  Background,
-  Controls,
   type Node,
   type Edge,
   useNodesState,
@@ -9,75 +7,24 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useStore, connectWs } from "./store";
-import savannahBg from "./background.png";
 import { EventPanel } from "./EventPanel";
+import { Scene3D } from "./Scene3D";
+import { AgentOverlay } from "./AgentOverlay";
+import savannahBg from "./background.png";
 
 const WS_URL = import.meta.env["VITE_WS_URL"] ?? "ws://localhost:8765";
 
-const STATUS_COLOR: Record<string, string> = {
-  idle: "#4ade80",
-  reasoning: "#facc15",
-  crisis: "#f87171",
-};
-
-function AgentNode({ data }: {
-  data: {
-    label: string;
-    status: string;
-    skillCount: number;
-    alive: boolean;
-    hunger?: { current: number; threshold: number };
-  };
-}) {
-  const color = data.alive ? (STATUS_COLOR[data.status] ?? "#4ade80") : "#555";
-  const hungerPct = data.hunger ? Math.min(data.hunger.current / data.hunger.threshold, 1) : null;
-  const hungerColor = hungerPct == null ? null
-    : hungerPct > 0.75 ? "#ef4444"
-    : hungerPct > 0.5 ? "#f97316"
-    : "#facc15";
-
+function LionPawIcon() {
   return (
-    <div
-      style={{
-        background: "#1a1a2e",
-        border: `2px solid ${color}`,
-        borderRadius: 12,
-        padding: "10px 16px",
-        minWidth: 120,
-        textAlign: "center",
-        opacity: data.alive ? 1 : 0.4,
-        boxShadow: data.status === "reasoning" ? `0 0 12px ${color}` : "none",
-        transition: "all 0.3s",
-      }}
-    >
-      <div style={{ fontWeight: "bold", color, fontSize: 14 }}>{data.label}</div>
-      <div style={{ color: "#888", fontSize: 11, marginTop: 4 }}>
-        {data.alive ? data.status : "dead"} · {data.skillCount} skills
-      </div>
-      {hungerPct != null && data.alive && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#555", marginBottom: 2 }}>
-            <span>hunger</span>
-            <span>{data.hunger!.current}/{data.hunger!.threshold}</span>
-          </div>
-          <div style={{ background: "#0a0a0a", borderRadius: 4, height: 4, overflow: "hidden" }}>
-            <div style={{
-              width: `${hungerPct * 100}%`,
-              height: "100%",
-              background: hungerColor!,
-              transition: "width 0.4s, background 0.4s",
-            }} />
-          </div>
-        </div>
-      )}
-    </div>
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true" style={{ display: "block" }}>
+      <path fill="#f2a35e" d="M7 6h2v2h2v5H5V8h2V6Z" />
+      <path fill="#f2a35e" d="M2 5h3v3H2V5Zm4-3h2v3H6V2Zm3 0h2v3H9V2Zm2 3h3v3h-3V5Z" />
+    </svg>
   );
 }
 
-const nodeTypes = { agent: AgentNode };
-
 export default function App() {
-  const { agents, crises, edges, events, tick } = useStore();
+  const { agents, crises, edges, events, tick, screenPositions } = useStore();
   const [showPanel, setShowPanel] = useState(true);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -87,14 +34,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const rfNodes: Node[] = Object.values(agents).map((a) => ({
-      id: a.id,
-      type: "agent",
-      position: a.position,
-      data: { label: a.id, status: a.status, skillCount: a.knownSkillIds.length, alive: a.alive, hunger: a.hunger },
-    }));
+    const rfNodes: Node[] = Object.values(agents).map((a) => {
+      const projected = screenPositions[a.id];
+      return {
+        id: a.id,
+        position: projected ? { x: projected.x, y: projected.y + 92 } : a.position,
+        data: {},
+        selectable: false,
+        draggable: false,
+        style: {
+          width: 1,
+          height: 1,
+          opacity: 0,
+          background: "transparent",
+          border: "none",
+          padding: 0,
+        },
+      };
+    });
     setNodes(rfNodes);
-  }, [agents, setNodes]);
+  }, [agents, screenPositions, setNodes]);
 
   useEffect(() => {
     const rfEdgesNew: Edge[] = edges.map((e) => ({
@@ -103,8 +62,10 @@ export default function App() {
       target: e.to,
       label: e.label,
       animated: true,
-      style: { stroke: "#7c3aed" },
-      labelStyle: { fill: "#c4b5fd", fontSize: 10 },
+      type: "smoothstep",
+      style: { stroke: "#c4a8ff", strokeWidth: 1.4, opacity: 0.42, strokeDasharray: "6 7" },
+      labelStyle: { fill: "#e6d7ff", fontSize: 10, fontFamily: "'VT323', monospace" },
+      labelBgStyle: { fill: "rgba(18,16,14,0.75)", fillOpacity: 0.9 },
     }));
     setEdges(rfEdgesNew);
   }, [edges, setEdges]);
@@ -114,39 +75,66 @@ export default function App() {
   return (
     <div style={{
       position: "relative", width: "100vw", height: "100vh", overflow: "hidden",
+      backgroundColor: "#130f0a",
       backgroundImage: `url(${savannahBg})`,
       backgroundSize: "cover",
       backgroundPosition: "center",
+      backgroundRepeat: "no-repeat",
     }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <Scene3D />
+      </div>
 
-      {/* ReactFlow fills the entire canvas — no background of its own */}
-      <div style={{ position: "absolute", inset: 0 }}>
+      <AgentOverlay />
+
+      <div style={{ position: "absolute", inset: 0, zIndex: 10, pointerEvents: "none" }}>
         <ReactFlow
           nodes={nodes}
           edges={rfEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          preventScrolling={false}
+          proOptions={{ hideAttribution: true }}
           style={{ background: "transparent" }}
-        >
-          <Controls />
-        </ReactFlow>
+        />
       </div>
 
       {/* Tick + crisis bar — floats top-left */}
       <div style={{
         position: "absolute", top: 12, left: 12,
+        zIndex: 30,
         display: "flex", gap: 10, alignItems: "center",
         background: "rgba(10,6,2,0.55)", backdropFilter: "blur(8px)",
         borderRadius: 8, padding: "5px 12px",
         border: "1px solid rgba(255,255,255,0.10)",
       }}>
-        <span style={{ color: "#e8d8b8", fontWeight: 600, fontSize: 13 }}>emergent-civ</span>
-        <span style={{ color: "#7a6848", fontSize: 11 }}>tick {tick}</span>
+        <span style={{ color: "#ffe0a3", fontWeight: 600, fontSize: 10, fontFamily: "'Press Start 2P', monospace" }}>moirai</span>
+        <span style={{ color: "#c5a66d", fontSize: 13, fontFamily: "'VT323', monospace" }}>tick {tick}</span>
         {activeCrises.map((c) => (
-          <span key={c.id} style={{ background: "rgba(180,60,30,0.6)", color: "#fca5a5", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
-            🦁 {c.type} → {c.targets.join(", ")}
+          <span
+            key={c.id}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "rgba(180,60,30,0.6)",
+              color: "#ffc9a8",
+              borderRadius: 4,
+              padding: "3px 8px",
+              fontSize: 12,
+              fontFamily: "'VT323', monospace",
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+            }}
+          >
+            <LionPawIcon /> {c.type} {"->"} {c.targets.join(", ")}
           </span>
         ))}
       </div>
@@ -154,6 +142,7 @@ export default function App() {
       {/* Event panel + vertical toggle tab — floats right */}
       <div style={{
         position: "absolute", top: 12, right: 12, bottom: 12,
+        zIndex: 40,
         display: "flex", flexDirection: "row", alignItems: "stretch", gap: 0,
       }}>
         {showPanel && (
