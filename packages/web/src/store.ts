@@ -56,6 +56,8 @@ export type CrisisInfo = {
   type: string;
   targets: string[];
   resolved: boolean;
+  startedAtTick: number;
+  deadlineTicks: number;
 };
 
 export type EdgeInfo = {
@@ -66,11 +68,20 @@ export type EdgeInfo = {
 };
 
 export type ScreenPosition = { x: number; y: number };
+export type WalkOffset = { dx: number; dy: number };
 
 export type LionState = {
   active: boolean;
   crisisId?: string;
   targets: string[];
+};
+
+export type SkillTransferInfo = {
+  id: string;
+  from: string;
+  to: string;
+  skillName: string;
+  expiresAtMs: number;
 };
 
 type Store = {
@@ -82,23 +93,31 @@ type Store = {
   tick: number;
   screenPositions: Record<string, ScreenPosition>;
   lionState: LionState;
+  selectedAgentId: string | null;
+  walkOffsets: Record<string, WalkOffset>;
+  skillTransfers: SkillTransferInfo[];
 
   handleEvent(ev: GameEvent): void;
   setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
+  selectAgent(agentId: string | null): void;
+  clearExpiredSkillTransfers(nowMs?: number): void;
 };
 
 const POSITIONS: Record<string, { x: number; y: number }> = {
-  alice: { x: 80, y: 300 },
-  bob: { x: 310, y: 70 },
-  charlie: { x: 540, y: 295 },
-  dave: { x: 90, y: 500 },
-  eve: { x: 440, y: 430 },
+  alice: { x: 330, y: 300 },
+  bob: { x: 395, y: 318 },
+  charlie: { x: 545, y: 250 },
+  dave: { x: 420, y: 500 },
+  eve: { x: 610, y: 390 },
+  frank: { x: 665, y: 520 },
+  grace: { x: 260, y: 455 },
+  henry: { x: 705, y: 235 },
 };
 
 function positionFor(id: string, agentCount: number): { x: number; y: number } {
   if (POSITIONS[id]) return POSITIONS[id]!;
   const angle = (agentCount * 2 * Math.PI) / 5;
-  return { x: 300 + 220 * Math.cos(angle), y: 300 + 190 * Math.sin(angle) };
+  return { x: 460 + 250 * Math.cos(angle), y: 340 + 190 * Math.sin(angle) };
 }
 
 function lionStateFromCrises(crises: Record<string, CrisisInfo>): LionState {
@@ -106,6 +125,35 @@ function lionStateFromCrises(crises: Record<string, CrisisInfo>): LionState {
   return activeLion
     ? { active: true, crisisId: activeLion.id, targets: activeLion.targets }
     : { active: false, targets: [] };
+}
+
+function nextWalkOffsets(agents: Record<string, AgentInfo>): Record<string, WalkOffset> {
+  const offsets: Record<string, WalkOffset> = {};
+  for (const agent of Object.values(agents)) {
+    if (!agent.alive) continue;
+    offsets[agent.id] = {
+      dx: Math.round((Math.random() * 12 - 6) * 10) / 10,
+      dy: Math.round((Math.random() * 12 - 6) * 10) / 10,
+    };
+  }
+  return offsets;
+}
+
+function skillNameFor(skills: Record<string, SkillInfo>, skillId: string): string {
+  return skills[skillId]?.name ?? skillId.slice(0, 8);
+}
+
+function skillTransferFor(
+  skills: Record<string, SkillInfo>,
+  transfer: { from: string; to: string; skillId: string; tick: number; index: number },
+): SkillTransferInfo {
+  return {
+    id: `transfer-${transfer.from}-${transfer.to}-${transfer.skillId}-${transfer.tick}-${transfer.index}`,
+    from: transfer.from,
+    to: transfer.to,
+    skillName: skillNameFor(skills, transfer.skillId),
+    expiresAtMs: Date.now() + 3000,
+  };
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -117,8 +165,19 @@ export const useStore = create<Store>((set, get) => ({
   tick: 0,
   screenPositions: {},
   lionState: { active: false, targets: [] },
+  selectedAgentId: null,
+  walkOffsets: {},
+  skillTransfers: [],
   setScreenPositions(screenPositions) {
     set({ screenPositions });
+  },
+  selectAgent(agentId) {
+    set({ selectedAgentId: agentId });
+  },
+  clearExpiredSkillTransfers(nowMs = Date.now()) {
+    set((state) => ({
+      skillTransfers: state.skillTransfers.filter((transfer) => transfer.expiresAtMs > nowMs),
+    }));
   },
 
   handleEvent(ev: GameEvent) {
@@ -127,6 +186,8 @@ export const useStore = create<Store>((set, get) => ({
       const skills = { ...state.skills };
       const crises = { ...state.crises };
       const edges = [...state.edges];
+      const skillTransfers = [...state.skillTransfers];
+      let walkOffsets = state.walkOffsets;
       let lionState = state.lionState;
       // AGENT_HUNGER fires every tick — update state but don't spam the feed
       const events = ev.kind === "AGENT_HUNGER"
@@ -136,6 +197,7 @@ export const useStore = create<Store>((set, get) => ({
 
       if (ev.kind === "WORLD_TICK") {
         tick = ev.tick;
+        walkOffsets = nextWalkOffsets(agents);
       }
 
       if (ev.kind === "AGENT_SPAWNED") {
@@ -163,8 +225,15 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       if (ev.kind === "CRISIS_STARTED" && ev.payload) {
-        const p = ev.payload as { id: string; type: string; targets: string[] };
-        crises[p.id] = { id: p.id, type: p.type, targets: p.targets, resolved: false };
+        const p = ev.payload as { id: string; type: string; targets: string[]; startedAtTick?: number; deadlineTicks?: number };
+        crises[p.id] = {
+          id: p.id,
+          type: p.type,
+          targets: p.targets,
+          resolved: false,
+          startedAtTick: p.startedAtTick ?? ev.tick,
+          deadlineTicks: p.deadlineTicks ?? 0,
+        };
         if (p.type.toLowerCase() === "lion") {
           lionState = { active: true, crisisId: p.id, targets: p.targets };
         }
@@ -259,9 +328,16 @@ export const useStore = create<Store>((set, get) => ({
           agents[ev.actorId] = { ...a, knownSkillIds: [...a.knownSkillIds, skillId] };
         }
         const edgeId = `teach-${from}-${ev.actorId}-${skillId}`;
+        const skillName = skillNameFor(skills, skillId);
         if (!edges.find((e) => e.id === edgeId)) {
-          edges.push({ id: edgeId, from, to: ev.actorId, label: `taught ${skillId.slice(0, 6)}` });
+          edges.push({ id: edgeId, from, to: ev.actorId, label: skillName });
         }
+        skillTransfers.push(skillTransferFor(skills, { from, to: ev.actorId, skillId, tick: ev.tick, index: skillTransfers.length }));
+      }
+
+      if (ev.kind === "SKILL_TAUGHT" && ev.payload) {
+        const { to, skillId } = ev.payload as { to: string; skillId: string };
+        skillTransfers.push(skillTransferFor(skills, { from: ev.actorId, to, skillId, tick: ev.tick, index: skillTransfers.length }));
       }
 
       if (ev.kind === "SKILL_INHERITED" && ev.payload) {
@@ -274,7 +350,7 @@ export const useStore = create<Store>((set, get) => ({
 
       lionState = lionStateFromCrises(crises);
 
-      return { agents, skills, crises, edges, events, tick, lionState };
+      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers };
     });
   },
 }));

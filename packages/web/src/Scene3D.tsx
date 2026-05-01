@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useStore, type AgentInfo, type LionState, type ScreenPosition } from "./store";
+import { useStore, type AgentInfo, type ScreenPosition } from "./store";
+import { computeLionFinalPoint, WORLD_CENTER, WORLD_SCALE } from "./worldPhysics";
 import lionPng from "./assets/lion.png";
-
-const WORLD_SCALE = 0.018;
-const WORLD_CENTER = { x: 400, y: 240 };
 
 function agentWorldPosition(agent: AgentInfo, y = 0.9): THREE.Vector3 {
   return new THREE.Vector3(
@@ -15,16 +13,8 @@ function agentWorldPosition(agent: AgentInfo, y = 0.9): THREE.Vector3 {
   );
 }
 
-function activeAgentWorldPosition(agent: AgentInfo, lionState: LionState, y = 0.9): THREE.Vector3 {
+function activeAgentWorldPosition(agent: AgentInfo, y = 0.9): THREE.Vector3 {
   const position = agentWorldPosition(agent, y);
-  if (!lionState.active) return position;
-
-  const targetIndex = lionState.targets.indexOf(agent.id);
-  if (targetIndex === -1) return position;
-
-  const side = targetIndex % 2 === 0 ? -1 : 1;
-  position.x += side * 1.05;
-  position.z += targetIndex % 2 === 0 ? 0.65 : -0.65;
   return position;
 }
 
@@ -44,34 +34,48 @@ function LionActor() {
   const materialRef = useRef<THREE.SpriteMaterial>(null);
   const texture = useSceneTexture(lionPng, false);
   const agents = useStore((state) => state.agents);
+  const crises = useStore((state) => state.crises);
   const lionState = useStore((state) => state.lionState);
+  const tick = useStore((state) => state.tick);
 
-  const target = useMemo(() => {
+  const destination = useMemo(() => {
     const targetAgents = lionState.targets.map((id) => agents[id]).filter(Boolean) as AgentInfo[];
-    if (targetAgents.length === 0) return new THREE.Vector3(8, 1, 0);
-    const centroid = targetAgents.reduce((acc, agent) => acc.add(activeAgentWorldPosition(agent, lionState, 0.95)), new THREE.Vector3());
-    centroid.divideScalar(targetAgents.length);
-    if (targetAgents.length === 1) {
-      centroid.x += 1.85;
-      centroid.z += 3.2;
-    } else {
-      centroid.x += 0.35;
-      centroid.z += 1.95;
-    }
-    return centroid;
-  }, [agents, lionState]);
+    const activeCrisis = lionState.crisisId ? crises[lionState.crisisId] : undefined;
+    const approachTicks = Math.max(1, Math.min(6, activeCrisis?.deadlineTicks ?? 6));
+    const progress = activeCrisis
+      ? THREE.MathUtils.clamp((tick - activeCrisis.startedAtTick) / approachTicks, 0, 1)
+      : 0;
+
+    if (targetAgents.length === 0) return new THREE.Vector3(9.5, 1, 0);
+    const targetIds = new Set(targetAgents.map((agent) => agent.id));
+    const finalPoint = computeLionFinalPoint({
+      targets: targetAgents.map((agent) => {
+        const point = activeAgentWorldPosition(agent, 0.95);
+        return { id: agent.id, point: { x: point.x, z: point.z } };
+      }),
+      blockers: Object.values(agents)
+        .filter((agent) => agent.alive && !targetIds.has(agent.id))
+        .map((agent) => {
+          const point = activeAgentWorldPosition(agent, 0.95);
+          return { id: agent.id, point: { x: point.x, z: point.z } };
+        }),
+    });
+    const final = new THREE.Vector3(finalPoint.x, 0.95, finalPoint.z);
+    const start = new THREE.Vector3(10.5, 0.95, final.z + 1.8);
+    return start.lerp(final, progress);
+  }, [agents, crises, lionState, tick]);
 
   useFrame(({ clock }, delta) => {
     if (!group.current || !materialRef.current) return;
-    const destination = lionState.active ? target : new THREE.Vector3(9.5, 1, target.z);
-    group.current.position.lerp(destination, Math.min(delta * 2.2, 1));
+    const targetPosition = lionState.active ? destination : new THREE.Vector3(10.5, 0.95, destination.z);
+    group.current.position.lerp(targetPosition, Math.min(delta * 2.8, 1));
     group.current.position.y = 0.95 + Math.sin(clock.elapsedTime * 5) * 0.04;
     materialRef.current.opacity = THREE.MathUtils.lerp(materialRef.current.opacity, lionState.active ? 1 : 0, Math.min(delta * 3, 1));
   });
 
   return (
     <group ref={group} position={[9.5, 0.95, 0]}>
-      <sprite scale={[1.85, 1.85, 1]}>
+      <sprite scale={[1.7, 1.7, 1]}>
         <spriteMaterial ref={materialRef} map={texture} transparent opacity={0} depthWrite={false} />
       </sprite>
     </group>
@@ -92,7 +96,7 @@ function ProjectionSync() {
 
     const screenPositions: Record<string, ScreenPosition> = {};
     for (const agent of Object.values(agents)) {
-      const projected = activeAgentWorldPosition(agent, lionState, 2.25).project(camera);
+      const projected = activeAgentWorldPosition(agent, 1.85).project(camera);
       screenPositions[agent.id] = {
         x: (projected.x * 0.5 + 0.5) * size.width,
         y: (-projected.y * 0.5 + 0.5) * size.height,
@@ -117,9 +121,6 @@ function CameraRig() {
 }
 
 function SceneContent() {
-  const agents = useStore((state) => state.agents);
-  const lionState = useStore((state) => state.lionState);
-
   return (
     <>
       <ambientLight intensity={1.8} />
