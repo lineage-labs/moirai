@@ -126,10 +126,7 @@ function LionActor({ route }: { route: LionRoute }) {
       const retPos = quadraticBezier3D(r.savedRoute.start, r.savedRoute.control, r.savedRoute.final, retProgress, curveDest.current);
       group.current.position.copy(retPos);
 
-      worldScratch.current.copy(retPos).project(camera);
-      const sx = (worldScratch.current.x * 0.5 + 0.5) * size.width;
-      const sy = (-worldScratch.current.y * 0.5 + 0.5) * size.height;
-      useStore.getState().setLionHud({ x: Math.round(sx), y: Math.round(sy), subtitle: "Retreating…" });
+      useStore.getState().setLionHud(null);
 
       if (t >= 1) {
         returnRef.current = null;

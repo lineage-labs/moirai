@@ -6,10 +6,11 @@
     "sticks can be sharpened into spears or clubs",
     "fire repels most animals including lions",
     "loud noises and shouting can startle and scare lions away",
-    "berries and plants provide nourishment",
+    "berries and plants can suppress hunger",
     "dry grass can be twisted into a snare to catch small animals",
     "rocks can be used to crack open nuts or dig up edible roots",
-    "fire made from dry grass and rocks can be used to cook food"
+    "fire made from dry grass and rocks can be used to cook food",
+    "currently there are no small animals and rooted food"
   ],
   "resources": ["rocks", "sticks", "berries", "water", "dry grass"],
   "topology": "open",
@@ -27,16 +28,16 @@
       "deadlineTicks": 30
     },
     {
-      "tick": 60,
+      "tick": 40,
       "type": "HUNGER",
       "targets": ["alice"],
       "deadlineTicks": 30
     },
     {
-      "tick": 62,
+      "tick": 30,
       "type": "HUNGER",
       "targets": ["charlie"],
-      "deadlineTicks": 30
+      "deadlineTicks": 20
     }
   ]
 }

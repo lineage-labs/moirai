@@ -11,7 +11,7 @@ export function loadEnvironment(id = "savannah"): Environment {
 }
 
 const LION_KEYWORDS = ["throw", "scare", "repel", "sharp", "point", "spear", "rock", "stone", "fire", "shout", "noise", "club", "stab", "ward", "deter", "lion"];
-const HUNGER_KEYWORDS = ["food", "eat", "berr", "fruit", "hunt", "gather", "forage", "nourish"];
+const HUNGER_KEYWORDS = ["food", "eat", "berr", "fruit", "gather", "forage", "nourish", "cook", "root", "plant", "edible", "harvest", "feed", "nutrition", "sustain", "meal"];
 
 export function skillResolvesCrisis(skill: Skill, crisis: Crisis, _env: Environment): boolean {
   const effect = skill.effect.toLowerCase();
@@ -23,7 +23,10 @@ export function skillResolvesCrisis(skill: Skill, crisis: Crisis, _env: Environm
     return LION_KEYWORDS.some((kw) => combined.includes(kw));
   }
   if (type === "hunger") {
-    return HUNGER_KEYWORDS.some((kw) => combined.includes(kw));
+    const hasHungerWord = HUNGER_KEYWORDS.some((kw) => combined.includes(kw));
+    // Reject skills whose primary purpose is lion-deterrence even if they mention food tangentially
+    const isPrimarilyLionSkill = combined.includes("lion") || combined.includes("deter") || combined.includes("scare") || combined.includes("sling") || combined.includes("weapon");
+    return hasHungerWord && !isPrimarilyLionSkill;
   }
   return false;
 }

@@ -11,11 +11,17 @@ const PRIORITY: Partial<Record<GameEvent["kind"], number>> = {
   CRISIS_STARTED: 100,
   AGENT_DIED: 90,
   SKILL_ACCEPTED: 80,
+  SELF_EVAL_RESULT: 78,
+  SKILL_PROPOSED: 75,
+  SKILL_REJECTED: 72,
   SKILL_LEARNED: 70,
   SKILL_TAUGHT: 65,
+  SKILL_DECLINED: 63,
+  SKILL_INHERITED: 62,
   AGENT_SPAWNED: 60,
   CRISIS_RESOLVED: 55,
   CRISIS_OVER: 50,
+  AXL_MESSAGE: 45,
 };
 
 export const MEANINGFUL_EVENT_KINDS = new Set(Object.keys(PRIORITY));
@@ -46,6 +52,25 @@ function titleForEvent(event: GameEvent): string {
       return "Crisis resolved";
     case "CRISIS_OVER":
       return "Crisis ended";
+    case "SKILL_PROPOSED": {
+      const payload = event.payload as { candidate?: { name?: string } } | undefined;
+      return payload?.candidate?.name ? `${event.actorId} proposed ${payload.candidate.name}` : `${event.actorId} proposed skill`;
+    }
+    case "SELF_EVAL_RESULT": {
+      const payload = event.payload as { score?: number } | undefined;
+      return payload?.score != null ? `Self-eval score ${payload.score.toFixed(2)}` : "Self-eval complete";
+    }
+    case "SKILL_REJECTED":
+      return `${event.actorId} skill rejected`;
+    case "SKILL_DECLINED":
+      return `${event.actorId} declined skill`;
+    case "SKILL_INHERITED": {
+      return `${event.actorId} inherited skill`;
+    }
+    case "AXL_MESSAGE": {
+      const payload = event.payload as { to?: string } | undefined;
+      return payload?.to ? `${event.actorId} → ${payload.to}` : `${event.actorId} broadcast`;
+    }
     default:
       return event.kind.replace(/_/g, " ").toLowerCase();
   }

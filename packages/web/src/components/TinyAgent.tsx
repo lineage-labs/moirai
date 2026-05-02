@@ -35,12 +35,17 @@ function healthColor(pct: number): string {
 
 export function TinyAgent({ agent, position, walkOffset, targeted, selected }: TinyAgentProps) {
   const selectAgent = useStore((state) => state.selectAgent);
+  const crises = useStore((state) => state.crises);
   const personality = getPersonality(agent.id);
   const x = position.x + (walkOffset?.dx ?? 0);
   const y = position.y + (walkOffset?.dy ?? 0);
   const color = agent.alive ? statusColor[agent.status] : "#777067";
   const hp = healthPct(agent);
   const hpColor = healthColor(hp);
+
+  const inHungerCrisis = agent.alive && Object.values(crises).some(
+    (c) => !c.resolved && c.type.toLowerCase() === "hunger" && c.targets.includes(agent.id),
+  );
 
   return (
     <motion.button
@@ -102,7 +107,7 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
               height: "100%",
               background: hpColor,
               borderRadius: 999,
-              boxShadow: hp <= 25 ? `0 0 6px ${hpColor}` : "none",
+              boxShadow: inHungerCrisis ? `0 0 10px #e45a45` : hp <= 25 ? `0 0 6px ${hpColor}` : "none",
             }}
           />
         </div>
@@ -127,6 +132,41 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
         >
           <img src={getAgentAvatar(agent.id)} alt="" width={64} height={64} style={{ display: "block" }} />
         </div>
+
+        {/* Hunger thought bubble */}
+        {inHungerCrisis && (
+          <motion.div
+            animate={{ scale: [1, 1.08, 1], opacity: [0.88, 1, 0.88] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: -52,
+              transform: "translateX(-10%)",
+              zIndex: 5,
+              pointerEvents: "none",
+            }}
+          >
+            {/* Thought trail dots */}
+            <div style={{ position: "absolute", bottom: -4, left: 6, width: 5, height: 5, borderRadius: "50%", background: "rgba(210,210,210,0.88)", boxShadow: "0 1px 4px rgba(0,0,0,0.4)" }} />
+            <div style={{ position: "absolute", bottom: -10, left: 2, width: 3.5, height: 3.5, borderRadius: "50%", background: "rgba(200,200,200,0.75)", boxShadow: "0 1px 3px rgba(0,0,0,0.35)" }} />
+            <div style={{ position: "absolute", bottom: -14, left: 0, width: 2.5, height: 2.5, borderRadius: "50%", background: "rgba(190,190,190,0.62)", boxShadow: "0 1px 2px rgba(0,0,0,0.3)" }} />
+            {/* Main bubble */}
+            <div style={{
+              width: 38,
+              height: 34,
+              borderRadius: 18,
+              background: "rgba(220,218,214,0.92)",
+              boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 18,
+              lineHeight: 1,
+            }}>
+              🍕
+            </div>
+          </motion.div>
+        )}
         <div
           style={{
             position: "absolute",
@@ -168,7 +208,7 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
             lineHeight: 1,
           }}
         >
-          {!agent.alive ? "💀" : targeted ? "🏃" : agent.status === "reasoning" ? "🤔" : "😊"}
+          {!agent.alive ? "💀" : targeted ? "🏃" : inHungerCrisis ? "🥵" : agent.status === "reasoning" ? "🤔" : "😊"}
         </div>
         {targeted && (
           <div style={{ position: "absolute", left: 0, right: 0, top: 38, height: 46, zIndex: 1 }}>

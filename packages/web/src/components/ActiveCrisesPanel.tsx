@@ -65,11 +65,22 @@ export function ActiveCrisesPanel() {
                     {isLion ? "HIGH" : "MED"}
                   </span>
                 </div>
-                {isLion && crisis.targets.length > 0 && (
+                {crisis.targets.length > 0 && (
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
                     {crisis.targets.map((target) => (
-                      <span key={target} style={{ color: "#ffd1c5", fontSize: 9, fontWeight: 700, padding: "3px 6px", borderRadius: 999, background: "rgba(210, 60, 44, 0.22)", border: "1px solid rgba(255, 113, 90, 0.22)" }}>
-                        target: {target}
+                      <span
+                        key={target}
+                        style={{
+                          color: isLion ? "#ffd1c5" : "#ffeea0",
+                          fontSize: 9,
+                          fontWeight: 700,
+                          padding: "3px 6px",
+                          borderRadius: 999,
+                          background: isLion ? "rgba(210,60,44,0.22)" : "rgba(210,160,44,0.20)",
+                          border: isLion ? "1px solid rgba(255,113,90,0.22)" : "1px solid rgba(230,190,80,0.28)",
+                        }}
+                      >
+                        {target}
                       </span>
                     ))}
                   </div>

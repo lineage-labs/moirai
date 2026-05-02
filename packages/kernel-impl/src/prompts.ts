@@ -15,6 +15,13 @@ export type ReasonPromptInput = {
   knownSkillSummaries: Array<Pick<Skill, "name" | "description" | "effect">>;
 };
 
+function crisisSkillHint(type: string): string {
+  const t = type.toUpperCase();
+  if (t === "LION") return "The skill MUST help scare away, repel, or defend against a lion (e.g. using fire, sharp objects, loud noise, throwing rocks). Do NOT propose a food or foraging skill.";
+  if (t === "HUNGER") return "The skill MUST help you find, gather, or eat food — for example: picking berries, gathering edible plants, digging up roots, cooking food with fire. Do NOT propose any lion-deterrent, weapon, or defensive skill. The word 'food', 'eat', 'berry', 'gather', 'forage', or 'nourish' MUST appear in the skill effect.";
+  return "The skill must directly resolve the crisis described above.";
+}
+
 export function buildReasonPrompt(input: ReasonPromptInput): string {
   const fragment = input.personality.promptFragments.reasoning?.trim() ?? "";
   return [
@@ -22,10 +29,11 @@ export function buildReasonPrompt(input: ReasonPromptInput): string {
     fragment,
     `World physics: ${input.environment.physics.join("; ")}.`,
     `Your personal inventory (what you currently carry): ${input.context.inventory.join(", ") || "(empty)"}.`,
-    `Crisis: ${input.crisis.description} (deadline in ${input.crisis.deadlineTicks} ticks).`,
+    `Crisis (type: ${input.crisis.type}): ${input.crisis.description} (deadline in ${input.crisis.deadlineTicks} ticks).`,
     input.knownSkillSummaries.length
       ? `Known skills:\n${input.knownSkillSummaries.map((s) => `- ${s.name}: ${s.effect}`).join("\n")}`
       : `Known skills: none.`,
+    crisisSkillHint(input.crisis.type),
     `Propose ONE new skill to resolve the crisis using ONLY items in your personal inventory. Respond as JSON matching: { name, description, preconditions: string[], effect, steps: string[] }.`,
   ]
     .filter(Boolean)

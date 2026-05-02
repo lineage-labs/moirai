@@ -60,14 +60,17 @@ const KIND_EMOJI: Partial<Record<string, string>> = {
   CRISIS_STARTED: "🦁",
   AGENT_DIED: "💀",
   SKILL_ACCEPTED: "✨",
+  SKILL_PROPOSED: "💡",
+  SELF_EVAL_RESULT: "📊",
+  SKILL_REJECTED: "❌",
+  SKILL_DECLINED: "🚫",
   SKILL_LEARNED: "🤝",
   SKILL_TAUGHT: "🤝",
+  SKILL_INHERITED: "🧬",
   AGENT_SPAWNED: "🌱",
   CRISIS_RESOLVED: "✅",
   CRISIS_OVER: "🏁",
   AXL_MESSAGE: "📡",
-  SKILL_INHERITED: "🧬",
-  SKILL_REJECTED: "❌",
 };
 
 function emojiFor(kind: string) { return KIND_EMOJI[kind] ?? "⚡"; }
@@ -210,7 +213,10 @@ function EventDetailPopup({ event, onClose }: { event: GameEvent; onClose: () =>
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 55,
-        width: 360,
+        width: 480,
+        maxHeight: "60vh",
+        display: "flex",
+        flexDirection: "column",
         borderRadius: 12,
         background: "linear-gradient(180deg, rgba(26,20,13,0.97), rgba(14,11,8,0.95))",
         border: `1px solid ${tone.border}`,
@@ -239,9 +245,9 @@ function EventDetailPopup({ event, onClose }: { event: GameEvent; onClose: () =>
         >×</button>
       </div>
 
-      {/* Rows */}
+      {/* Rows — scrollable */}
       {hasContent ? (
-        <div style={{ padding: "12px 14px 14px" }}>
+        <div style={{ padding: "12px 14px 14px", overflowY: "auto", flex: 1, scrollbarWidth: "thin", scrollbarColor: "rgba(196,151,84,0.22) transparent" }}>
           {rows}
         </div>
       ) : (
@@ -261,11 +267,12 @@ export function TickTimeline() {
 
   const meaningfulEvents = events.filter((e) => MEANINGFUL_EVENT_KINDS.has(e.kind));
 
-  // Auto-scroll to the newest event
+  // Auto-scroll to the newest event — but not while a card detail is open
   useEffect(() => {
+    if (selectedEvent) return;
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [meaningfulEvents.length]);
+  }, [meaningfulEvents.length, selectedEvent]);
 
   // Close detail when clicking outside
   useEffect(() => {
@@ -343,10 +350,10 @@ export function TickTimeline() {
                 onClick={() => handleCardClick(event)}
                 style={{
                   flexShrink: 0,
-                  width: 148,
+                  width: 190,
                   minHeight: 76,
                   borderRadius: 11,
-                  padding: "9px 11px",
+                  padding: "9px 12px",
                   background: isCurrent ? tone.bg : isSelected ? "rgba(255,220,150,0.06)" : "rgba(0,0,0,0.22)",
                   border: isCurrent
                     ? `2px solid #f6cf74`
@@ -381,11 +388,11 @@ export function TickTimeline() {
                       : <span>{emojiFor(event.kind)}</span>}
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ color: isCurrent ? tone.text : "#a08872", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {event.actorId}
-                    </div>
-                    <div style={{ color: isCurrent ? tone.accent : "#5a4e3e", fontSize: 9, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ color: isCurrent ? tone.text : "#a08872", fontSize: 11, fontWeight: 700, lineHeight: 1.25 }}>
                       {kindLabel(event.kind)}
+                    </div>
+                    <div style={{ color: isCurrent ? tone.accent : "#5a4e3e", fontSize: 9, marginTop: 3 }}>
+                      {event.actorId}
                     </div>
                   </div>
                 </div>

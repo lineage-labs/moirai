@@ -9,17 +9,30 @@ import { loadPersonality } from "@moirai/personality";
 import type { Event, Crisis, Skill } from "@moirai/shared";
 import type { AgentEntry, SkillEntry } from "./types.js";
 import {
-  inftAdapter, marketplaceAdapter, INFT_ENABLED, WORLD_ID,
-  buildMetadata, startContractListeners,
+  inftAdapter,
+  marketplaceAdapter,
+  INFT_ENABLED,
+  WORLD_ID,
+  buildMetadata,
+  startContractListeners,
 } from "./inft.js";
 import { startHttpServer } from "./http.js";
 
 const TICK_MS = parseInt(process.env["TICK_MS"] ?? "2000");
 const WS_PORT = parseInt(process.env["WS_PORT"] ?? "8765");
 const HTTP_PORT = parseInt(process.env["HTTP_PORT"] ?? "8766");
-const AGENT_RUNTIME_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../agent-runtime");
-const KEYS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../docker/axl/keys");
-const AVATARS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../web/src/assets/agents");
+const AGENT_RUNTIME_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../agent-runtime",
+);
+const KEYS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../docker/axl/keys",
+);
+const AVATARS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../web/src/assets/agents",
+);
 
 const AXL_URLS = [
   process.env["AXL_URL_1"] ?? "http://127.0.0.1:19002",
@@ -35,7 +48,9 @@ const AXL_KEY_PATHS: Record<string, string> = {
 if (INFT_ENABLED) {
   console.log(`[engine] iNFT enabled — world=${WORLD_ID}`);
 } else {
-  console.log("[engine] iNFT disabled (set INFT_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ADDRESS, ZG_PRIVATE_KEY, ZG_RPC_URL, ZG_INDEXER_URL to enable)");
+  console.log(
+    "[engine] iNFT disabled (set INFT_CONTRACT_ADDRESS, MARKETPLACE_CONTRACT_ADDRESS, ZG_PRIVATE_KEY, ZG_RPC_URL, ZG_INDEXER_URL to enable)",
+  );
 }
 
 const environment = loadEnvironment();
@@ -44,11 +59,22 @@ const skills = new Map<string, SkillEntry>();
 let tick = 0;
 let paused = false;
 
-
 function makeSkillStub(s: { id: string; name: string }): Skill {
   return {
-    id: s.id, name: s.name, description: "", preconditions: [], effect: "", steps: [],
-    provenance: { inventedBy: "inherited", inventedAt: 0, bornFrom: [], reasonReceipt: "", selfEvalReceipt: "", selfEvalScore: 0 },
+    id: s.id,
+    name: s.name,
+    description: "",
+    preconditions: [],
+    effect: "",
+    steps: [],
+    provenance: {
+      inventedBy: "inherited",
+      inventedAt: 0,
+      bornFrom: [],
+      reasonReceipt: "",
+      selfEvalReceipt: "",
+      selfEvalScore: 0,
+    },
   };
 }
 
@@ -64,59 +90,126 @@ wss.on("connection", (ws) => {
   }
   ws.on("message", (data) => {
     try {
-      const msg = JSON.parse(data.toString()) as { kind: string; agentId?: string; tokenId?: string; salePriceWei?: string };
-      if (msg.kind === "PAUSE") { paused = true; console.log("[engine] world PAUSED"); }
-      else if (msg.kind === "RESUME") { paused = false; console.log("[engine] world RESUMED"); }
-      else if (msg.kind === "MARKETPLACE_LIST" && inftAdapter && marketplaceAdapter) {
+      const msg = JSON.parse(data.toString()) as {
+        kind: string;
+        agentId?: string;
+        tokenId?: string;
+        salePriceWei?: string;
+      };
+      if (msg.kind === "PAUSE") {
+        paused = true;
+        console.log("[engine] world PAUSED");
+      } else if (msg.kind === "RESUME") {
+        paused = false;
+        console.log("[engine] world RESUMED");
+      } else if (
+        msg.kind === "MARKETPLACE_LIST" &&
+        inftAdapter &&
+        marketplaceAdapter
+      ) {
         const { agentId: targetId, tokenId, salePriceWei } = msg;
         if (!targetId || !tokenId || !salePriceWei) return;
         const entry = agents.get(targetId);
-        if (!entry) { broadcast({ kind: "MARKETPLACE_ERROR", tick, actorId: targetId, payload: { message: "agent not found" } } as unknown as Event); return; }
-        console.log(`[engine] [marketplace] list requested agentId=${targetId} tokenId=${tokenId}`);
-        marketplaceAdapter.list(tokenId, BigInt(salePriceWei), WORLD_ID).then(() => {
-          entry.listed = true;
-          broadcast({ kind: "AGENT_LISTED", tick, actorId: targetId, payload: { tokenId, salePriceWei } });
-          broadcastListings();
-        }).catch((err: unknown) => {
-          console.error("[engine] marketplace list failed:", err);
-          broadcast({ kind: "MARKETPLACE_ERROR", tick, actorId: targetId, payload: { message: String(err) } } as unknown as Event);
-        });
-      }
-      else if (msg.kind === "MARKETPLACE_DELIST" && marketplaceAdapter) {
+        if (!entry) {
+          broadcast({
+            kind: "MARKETPLACE_ERROR",
+            tick,
+            actorId: targetId,
+            payload: { message: "agent not found" },
+          } as unknown as Event);
+          return;
+        }
+        console.log(
+          `[engine] [marketplace] list requested agentId=${targetId} tokenId=${tokenId}`,
+        );
+        marketplaceAdapter
+          .list(tokenId, BigInt(salePriceWei), WORLD_ID)
+          .then(() => {
+            entry.listed = true;
+            broadcast({
+              kind: "AGENT_LISTED",
+              tick,
+              actorId: targetId,
+              payload: { tokenId, salePriceWei },
+            });
+            broadcastListings();
+          })
+          .catch((err: unknown) => {
+            console.error("[engine] marketplace list failed:", err);
+            broadcast({
+              kind: "MARKETPLACE_ERROR",
+              tick,
+              actorId: targetId,
+              payload: { message: String(err) },
+            } as unknown as Event);
+          });
+      } else if (msg.kind === "MARKETPLACE_DELIST" && marketplaceAdapter) {
         const { agentId: targetId, tokenId } = msg;
         if (!targetId || !tokenId) return;
         const entry = agents.get(targetId);
-        console.log(`[engine] [marketplace] delist requested agentId=${targetId} tokenId=${tokenId}`);
-        marketplaceAdapter.delist(tokenId).then(() => {
-          if (entry) entry.listed = false;
-          broadcast({ kind: "AGENT_DELISTED", tick, actorId: targetId, payload: { tokenId, reason: "manual" } });
-          broadcastListings();
-        }).catch((err: unknown) => {
-          console.error("[engine] marketplace delist failed:", err);
-          broadcast({ kind: "MARKETPLACE_ERROR", tick, actorId: targetId, payload: { message: String(err) } } as unknown as Event);
-        });
-      }
-      else if (msg.kind === "MARKETPLACE_GET_LISTINGS") {
-        broadcastListings();
-      }
-      else if (msg.kind === "MARKETPLACE_IMPORT" && marketplaceAdapter) {
-        const { tokenId, salePriceWei } = msg as { kind: string; tokenId?: string; salePriceWei?: string };
-        if (!tokenId || !salePriceWei) return;
-        console.log(`[engine] [marketplace] import requested tokenId=${tokenId}`);
-        marketplaceAdapter.buy(tokenId, BigInt(salePriceWei))
+        console.log(
+          `[engine] [marketplace] delist requested agentId=${targetId} tokenId=${tokenId}`,
+        );
+        marketplaceAdapter
+          .delist(tokenId)
           .then(() => {
-            console.log(`[engine] [marketplace] bought tokenId=${tokenId} — waiting for Transfer event to spawn`);
+            if (entry) entry.listed = false;
+            broadcast({
+              kind: "AGENT_DELISTED",
+              tick,
+              actorId: targetId,
+              payload: { tokenId, reason: "manual" },
+            });
+            broadcastListings();
+          })
+          .catch((err: unknown) => {
+            console.error("[engine] marketplace delist failed:", err);
+            broadcast({
+              kind: "MARKETPLACE_ERROR",
+              tick,
+              actorId: targetId,
+              payload: { message: String(err) },
+            } as unknown as Event);
+          });
+      } else if (msg.kind === "MARKETPLACE_GET_LISTINGS") {
+        broadcastListings();
+      } else if (msg.kind === "MARKETPLACE_IMPORT" && marketplaceAdapter) {
+        const { tokenId, salePriceWei } = msg as {
+          kind: string;
+          tokenId?: string;
+          salePriceWei?: string;
+        };
+        if (!tokenId || !salePriceWei) return;
+        console.log(
+          `[engine] [marketplace] import requested tokenId=${tokenId}`,
+        );
+        marketplaceAdapter
+          .buy(tokenId, BigInt(salePriceWei))
+          .then(() => {
+            console.log(
+              `[engine] [marketplace] bought tokenId=${tokenId} — waiting for Transfer event to spawn`,
+            );
             broadcastListings();
           })
           .catch((err: unknown) => {
             console.error("[engine] marketplace buy failed:", err);
-            broadcast({ kind: "MARKETPLACE_ERROR", tick, actorId: "engine", payload: { message: String(err), tokenId } } as unknown as Event);
+            broadcast({
+              kind: "MARKETPLACE_ERROR",
+              tick,
+              actorId: "engine",
+              payload: { message: String(err), tokenId },
+            } as unknown as Event);
           });
-      }
-      else if (msg.kind === "MARKETPLACE_CLEAN" && marketplaceAdapter && inftAdapter) {
+      } else if (
+        msg.kind === "MARKETPLACE_CLEAN" &&
+        marketplaceAdapter &&
+        inftAdapter
+      ) {
         cleanOwnListings().then(broadcastListings).catch(console.error);
       }
-    } catch { /* ignore malformed */ }
+    } catch {
+      /* ignore malformed */
+    }
   });
 });
 
@@ -146,39 +239,70 @@ async function cleanOwnListings(): Promise<void> {
     inftAdapter.getOwnedTokenIds(),
   ]);
   const ownedSet = new Set(ownedTokenIds);
-  const stale = listings.filter(l => ownedSet.has(l.tokenId));
+  const stale = listings.filter((l) => ownedSet.has(l.tokenId));
   if (stale.length === 0) return;
-  console.log(`[engine] [marketplace] cleaning ${stale.length} stale own listing(s)…`);
+  console.log(
+    `[engine] [marketplace] cleaning ${stale.length} stale own listing(s)…`,
+  );
   for (const l of stale) {
-    await marketplaceAdapter!.delist(l.tokenId)
-      .then(() => console.log(`[engine] [marketplace] cleaned tokenId=${l.tokenId}`))
-      .catch((err: unknown) => console.error(`[engine] [marketplace] delist failed tokenId=${l.tokenId}:`, err));
+    await marketplaceAdapter!
+      .delist(l.tokenId)
+      .then(() =>
+        console.log(`[engine] [marketplace] cleaned tokenId=${l.tokenId}`),
+      )
+      .catch((err: unknown) =>
+        console.error(
+          `[engine] [marketplace] delist failed tokenId=${l.tokenId}:`,
+          err,
+        ),
+      );
   }
 }
 
 function broadcastListings(): void {
   if (!marketplaceAdapter) return;
-  marketplaceAdapter.getActiveListings().then(async (rawListings) => {
-    // Deduplicate by tokenId — contract bug can produce duplicate entries
-    const seen = new Map<string, typeof rawListings[number]>();
-    for (const l of rawListings) seen.set(l.tokenId, l);
-    const listings = [...seen.values()];
-    const enriched = await Promise.all(listings.map(async (l) => {
-      const base = { ...l, salePriceWei: l.salePriceWei.toString() };
-      if (!inftAdapter) return base;
-      try {
-        const meta = await inftAdapter.readMetadata(l.tokenId);
-        const localEntry = [...agents.values()].find(a => a.tokenId === l.tokenId);
-        const liveSkills = localEntry
-          ? [...localEntry.knownSkillIds].map(sid => ({ id: sid, name: skills.get(sid)?.skill.name ?? sid }))
-          : meta.skills.map(s => ({ id: s.id, name: s.name }));
-        return { ...base, name: meta.name, traits: meta.traits, image: meta.image, skills: liveSkills };
-      } catch {
-        return base;
-      }
-    }));
-    pushToClients({ kind: "MARKETPLACE_LISTINGS", tick, actorId: "engine", payload: { listings: enriched } });
-  }).catch(console.error);
+  marketplaceAdapter
+    .getActiveListings()
+    .then(async (rawListings) => {
+      // Deduplicate by tokenId — contract bug can produce duplicate entries
+      const seen = new Map<string, (typeof rawListings)[number]>();
+      for (const l of rawListings) seen.set(l.tokenId, l);
+      const listings = [...seen.values()];
+      const enriched = await Promise.all(
+        listings.map(async (l) => {
+          const base = { ...l, salePriceWei: l.salePriceWei.toString() };
+          if (!inftAdapter) return base;
+          try {
+            const meta = await inftAdapter.readMetadata(l.tokenId);
+            const localEntry = [...agents.values()].find(
+              (a) => a.tokenId === l.tokenId,
+            );
+            const liveSkills = localEntry
+              ? [...localEntry.knownSkillIds].map((sid) => ({
+                  id: sid,
+                  name: skills.get(sid)?.skill.name ?? sid,
+                }))
+              : meta.skills.map((s) => ({ id: s.id, name: s.name }));
+            return {
+              ...base,
+              name: meta.name,
+              traits: meta.traits,
+              image: meta.image,
+              skills: liveSkills,
+            };
+          } catch {
+            return base;
+          }
+        }),
+      );
+      pushToClients({
+        kind: "MARKETPLACE_LISTINGS",
+        tick,
+        actorId: "engine",
+        payload: { listings: enriched },
+      });
+    })
+    .catch(console.error);
 }
 
 // --- Agent process tracking ---
@@ -188,7 +312,9 @@ let axlUrlIdx = 0;
 function sendToAgent(entry: AgentEntry, msg: unknown): void {
   try {
     if (entry.alive) entry.proc.stdin!.write(JSON.stringify(msg) + "\n");
-  } catch { /* process may have exited */ }
+  } catch {
+    /* process may have exited */
+  }
 }
 
 const REPLACEMENT_POOL = ["dave", "eve", "frank", "grace", "henry"];
@@ -200,7 +326,12 @@ function spawnAgent(
   ancestorDeaths: Array<{ agentId: string; reason: string }> = [],
   ancestorTokenIds: string[] = [],
   existingTokenId?: string,
-  nftIdentity?: { name: string; traits: string[]; personalityId: string; image: string },
+  nftIdentity?: {
+    name: string;
+    traits: string[];
+    personalityId: string;
+    image: string;
+  },
 ): void {
   const axlUrl = AXL_URLS[axlUrlIdx++ % AXL_URLS.length]!;
   const axlKeyPath = AXL_KEY_PATHS[axlUrl] ?? "";
@@ -208,7 +339,13 @@ function spawnAgent(
   const proc = spawn("node", ["--import", "tsx/esm", "src/index.ts"], {
     cwd: AGENT_RUNTIME_DIR,
     stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env, AGENT_ID: id, PERSONALITY_ID: personalityId, AXL_URL: axlUrl, AXL_KEY_PATH: axlKeyPath },
+    env: {
+      ...process.env,
+      AGENT_ID: id,
+      PERSONALITY_ID: personalityId,
+      AXL_URL: axlUrl,
+      AXL_KEY_PATH: axlKeyPath,
+    },
   });
 
   const personality = loadPersonality(personalityId);
@@ -216,21 +353,40 @@ function spawnAgent(
     id,
     ...(nftIdentity ? { personalityId } : {}),
     ...(nftIdentity?.image ? { image: nftIdentity.image } : {}),
-    proc, alive: true, knownSkillIds: new Set(),
-    hunger: 0, listed: false, sold: false,
+    proc,
+    alive: true,
+    knownSkillIds: new Set(),
+    hunger: 0,
+    listed: false,
+    sold: false,
     ...(personality.hunger ? { hungerConfig: personality.hunger } : {}),
   };
   agents.set(id, entry);
 
-  sendToAgent(entry, { kind: "BOOT", peerIds: [...agents.keys()], inheritedSkillRoots, ...(ancestorDeaths.length ? { ancestorDeaths } : {}) });
+  sendToAgent(entry, {
+    kind: "BOOT",
+    peerIds: [...agents.keys()],
+    inheritedSkillRoots,
+    ...(ancestorDeaths.length ? { ancestorDeaths } : {}),
+  });
 
   // iNFT: marketplace import | wallet reuse | fresh mint
   if (inftAdapter) {
     if (existingTokenId) {
       // Token from another engine — marketplace import
       entry.tokenId = existingTokenId;
-      console.log(`[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`);
-      broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots) } });
+      console.log(
+        `[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`,
+      );
+      broadcast({
+        kind: "AGENT_IMPORTED",
+        tick,
+        actorId: id,
+        payload: {
+          tokenId: existingTokenId,
+          skills: Object.keys(inheritedSkillRoots),
+        },
+      });
     } else {
       // Always mint fresh on engine start
       console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
@@ -242,8 +398,14 @@ function spawnAgent(
         .then((tokenId) => {
           entry.tokenId = tokenId;
           console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
-          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId } });
-        }).catch(console.error);
+          broadcast({
+            kind: "AGENT_MINTED",
+            tick,
+            actorId: id,
+            payload: { tokenId },
+          });
+        })
+        .catch(console.error);
     }
   }
 
@@ -252,7 +414,11 @@ function spawnAgent(
     const trimmed = line.trim();
     if (!trimmed) return;
     let msg: Record<string, unknown>;
-    try { msg = JSON.parse(trimmed) as Record<string, unknown>; } catch { return; }
+    try {
+      msg = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      return;
+    }
 
     if (msg["_kind"] === "META_SKILL_ROOT") {
       const skillId = msg["skillId"] as string;
@@ -266,18 +432,33 @@ function spawnAgent(
 
     if (event.kind === "SKILL_ACCEPTED") {
       entry.knownSkillIds.add(event.payload.skill.id);
-      skills.set(event.payload.skill.id, { skill: event.payload.skill, rootHash: "" });
+      skills.set(event.payload.skill.id, {
+        skill: event.payload.skill,
+        rootHash: "",
+      });
       if (inftAdapter && entry.tokenId) {
-        inftAdapter.updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick)).catch(console.error);
+        inftAdapter
+          .updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
+          .catch(console.error);
       }
     }
     if (event.kind === "SKILL_LEARNED" || event.kind === "SKILL_INHERITED") {
       entry.knownSkillIds.add(event.payload.skillId);
     }
-    if (event.kind === "REASONING_STARTED" && entry.listed && entry.tokenId && marketplaceAdapter) {
+    if (
+      event.kind === "REASONING_STARTED" &&
+      entry.listed &&
+      entry.tokenId &&
+      marketplaceAdapter
+    ) {
       entry.listed = false;
       marketplaceAdapter.delist(entry.tokenId).catch(console.error);
-      broadcast({ kind: "AGENT_DELISTED", tick, actorId: id, payload: { tokenId: entry.tokenId, reason: "reasoning" } });
+      broadcast({
+        kind: "AGENT_DELISTED",
+        tick,
+        actorId: id,
+        payload: { tokenId: entry.tokenId, reason: "reasoning" },
+      });
     }
 
     broadcast(event);
@@ -288,11 +469,18 @@ function spawnAgent(
     const wasAlive = entry.alive;
     entry.alive = false;
     if (wasAlive) {
-      broadcast({ kind: "AGENT_DIED", tick, actorId: id, payload: { reason: code === 0 ? "natural" : `exit ${code}` } });
+      broadcast({
+        kind: "AGENT_DIED",
+        tick,
+        actorId: id,
+        payload: { reason: code === 0 ? "natural" : `exit ${code}` },
+      });
     }
 
     if (inftAdapter && entry.tokenId && !entry.sold) {
-      console.log(`[engine] [iNFT] ${id}: died — setting dormant tokenId=${entry.tokenId}`);
+      console.log(
+        `[engine] [iNFT] ${id}: died — setting dormant tokenId=${entry.tokenId}`,
+      );
       const dormantMeta = buildMetadata(entry, skills, tick);
       dormantMeta.status = "dormant";
       dormantMeta.deathTick = tick;
@@ -311,7 +499,17 @@ function spawnAgent(
       }
       const ancestorTokenIds = entry.tokenId ? [entry.tokenId] : [];
       setTimeout(() => {
-        spawnAgent(nextId, inheritedSkillRoots, [{ agentId: id, reason: code === 0 ? "hunger" : `exit code ${code}` }], ancestorTokenIds);
+        spawnAgent(
+          nextId,
+          inheritedSkillRoots,
+          [
+            {
+              agentId: id,
+              reason: code === 0 ? "hunger" : `exit code ${code}`,
+            },
+          ],
+          ancestorTokenIds,
+        );
         broadcastPeerList();
       }, 3 * TICK_MS);
     }
@@ -320,26 +518,56 @@ function spawnAgent(
   const spawnedName = nftIdentity?.name ?? personality.name;
   const spawnedTraits = nftIdentity?.traits ?? personality.traits ?? [];
   const spawnedImage = nftIdentity?.image ?? entry.image;
-  broadcast({ kind: "AGENT_SPAWNED", tick, actorId: id, payload: { personalityId, name: spawnedName, traits: spawnedTraits, ...(spawnedImage ? { image: spawnedImage } : {}) } });
+  broadcast({
+    kind: "AGENT_SPAWNED",
+    tick,
+    actorId: id,
+    payload: {
+      personalityId,
+      name: spawnedName,
+      traits: spawnedTraits,
+      ...(spawnedImage ? { image: spawnedImage } : {}),
+    },
+  });
 }
 
 async function spawnFromNFT(tokenId: string): Promise<string | null> {
   if (!inftAdapter) return null;
-  console.log(`[engine] [iNFT] spawnFromNFT: tokenId=${tokenId} — reading metadata…`);
+  console.log(
+    `[engine] [iNFT] spawnFromNFT: tokenId=${tokenId} — reading metadata…`,
+  );
   const metadata = await inftAdapter.readMetadata(tokenId);
   // Unique runtime id: personalityId-tokenId avoids collisions with local agents
   const uniqueId = `${metadata.personalityId}-${tokenId}`;
-  console.log(`[engine] [iNFT] spawnFromNFT: uniqueId=${uniqueId} skills=${metadata.skills.length}`);
+  console.log(
+    `[engine] [iNFT] spawnFromNFT: uniqueId=${uniqueId} skills=${metadata.skills.length}`,
+  );
   // Pre-populate the skills Map so buildMetadata always writes the full cumulative set
   for (const s of metadata.skills) {
     if (!skills.has(s.id)) {
       skills.set(s.id, { skill: makeSkillStub(s), rootHash: s.rootHash });
-      console.log(`[engine] [iNFT] pre-populated skill stub: ${s.id} (${s.name})`);
+      console.log(
+        `[engine] [iNFT] pre-populated skill stub: ${s.id} (${s.name})`,
+      );
     }
   }
-  const inheritedSkillRoots = Object.fromEntries(metadata.skills.map((s) => [s.id, s.rootHash]));
-  const nftIdentity = { name: metadata.name, traits: metadata.traits, personalityId: metadata.personalityId, image: metadata.image };
-  spawnAgent(uniqueId, inheritedSkillRoots, [], [...metadata.ancestorTokenIds, tokenId], tokenId, nftIdentity);
+  const inheritedSkillRoots = Object.fromEntries(
+    metadata.skills.map((s) => [s.id, s.rootHash]),
+  );
+  const nftIdentity = {
+    name: metadata.name,
+    traits: metadata.traits,
+    personalityId: metadata.personalityId,
+    image: metadata.image,
+  };
+  spawnAgent(
+    uniqueId,
+    inheritedSkillRoots,
+    [],
+    [...metadata.ancestorTokenIds, tokenId],
+    tokenId,
+    nftIdentity,
+  );
   return uniqueId;
 }
 
@@ -347,7 +575,10 @@ function broadcastPeerList(): void {
   const allIds = [...agents.keys()];
   for (const agent of agents.values()) {
     if (!agent.alive) continue;
-    sendToAgent(agent, { kind: "PEERS", peerIds: allIds.filter((id) => id !== agent.id) });
+    sendToAgent(agent, {
+      kind: "PEERS",
+      peerIds: allIds.filter((id) => id !== agent.id),
+    });
   }
 }
 
@@ -386,10 +617,15 @@ function checkCrisisResolution(agentId: string): void {
       resolvedCrises.add(crisisId);
       activeCrises.delete(crisisId);
       perCrisisResolvedAgents.delete(crisisId);
-      const survived = crisis.targets.filter(id => agents.get(id)?.alive);
-      const died = crisis.targets.filter(id => !agents.get(id)?.alive);
-      const totalAlive = [...agents.values()].filter(a => a.alive).length;
-      broadcast({ kind: "CRISIS_RESOLVED", tick, actorId: "engine", payload: { crisisId, survived, died, totalAlive } });
+      const survived = crisis.targets.filter((id) => agents.get(id)?.alive);
+      const died = crisis.targets.filter((id) => !agents.get(id)?.alive);
+      const totalAlive = [...agents.values()].filter((a) => a.alive).length;
+      broadcast({
+        kind: "CRISIS_RESOLVED",
+        tick,
+        actorId: "engine",
+        payload: { crisisId, survived, died, totalAlive },
+      });
     }
   }
 }
@@ -403,11 +639,66 @@ function doTick(): void {
   for (const agent of agents.values()) {
     if (!agent.alive || !agent.hungerConfig) continue;
     agent.hunger += agent.hungerConfig.rate;
-    broadcast({ kind: "AGENT_HUNGER", tick, actorId: agent.id, payload: { hunger: agent.hunger, threshold: agent.hungerConfig.threshold } });
+    broadcast({
+      kind: "AGENT_HUNGER",
+      tick,
+      actorId: agent.id,
+      payload: {
+        hunger: agent.hunger,
+        threshold: agent.hungerConfig.threshold,
+      },
+    });
+
+    // Inject a HUNGER crisis at 65% of threshold so the agent has time to evolve a food skill
+    const WARNING_RATIO = 0.65;
+    const warningLevel = agent.hungerConfig.threshold * WARNING_RATIO;
+    const hasActiveHungerCrisis = [...activeCrises.values()].some(
+      (c) => c.type.toLowerCase() === "hunger" && c.targets.includes(agent.id),
+    );
+    const warnKey = `hunger-warn-${agent.id}`;
+    if (
+      agent.hunger >= warningLevel &&
+      !hasActiveHungerCrisis &&
+      !resolvedCrises.has(warnKey)
+    ) {
+      const ticksLeft = Math.max(
+        5,
+        Math.ceil(
+          (agent.hungerConfig.threshold - agent.hunger) /
+            agent.hungerConfig.rate,
+        ),
+      );
+      const crisisId = warnKey;
+      const crisis: Crisis = {
+        id: crisisId,
+        type: "HUNGER",
+        description:
+          "You are starving. You must find, gather, or produce food using items around you to survive.",
+        startedAtTick: tick,
+        deadlineTicks: ticksLeft,
+        targets: [agent.id],
+      };
+      activeCrises.set(crisisId, crisis);
+      broadcast({
+        kind: "CRISIS_STARTED",
+        tick,
+        actorId: "engine",
+        payload: crisis,
+      });
+      sendToAgent(agent, { kind: "TICK", tick, crises: [crisis] });
+    }
+
     if (agent.hunger >= agent.hungerConfig.threshold) {
-      agent.proc.stdin!.write(JSON.stringify({ kind: "DIE", reason: "hunger" }) + "\n");
+      agent.proc.stdin!.write(
+        JSON.stringify({ kind: "DIE", reason: "hunger" }) + "\n",
+      );
       agent.alive = false;
-      broadcast({ kind: "AGENT_DIED", tick, actorId: agent.id, payload: { reason: "hunger" } });
+      broadcast({
+        kind: "AGENT_DIED",
+        tick,
+        actorId: agent.id,
+        payload: { reason: "hunger" },
+      });
     }
   }
 
@@ -417,7 +708,8 @@ function doTick(): void {
 
     const survived: string[] = [];
     const killed: string[] = [];
-    const individuallyResolved = perCrisisResolvedAgents.get(crisisId) ?? new Set<string>();
+    const individuallyResolved =
+      perCrisisResolvedAgents.get(crisisId) ?? new Set<string>();
 
     for (const targetId of crisis.targets) {
       const agent = agents.get(targetId);
@@ -426,34 +718,58 @@ function doTick(): void {
         survived.push(targetId);
       } else {
         killed.push(targetId);
-        agent.proc.stdin!.write(JSON.stringify({ kind: "DIE", reason: `crisis:${crisis.type}` }) + "\n");
+        agent.proc.stdin!.write(
+          JSON.stringify({ kind: "DIE", reason: `crisis:${crisis.type}` }) +
+            "\n",
+        );
         agent.alive = false;
-        broadcast({ kind: "AGENT_DIED", tick, actorId: targetId, payload: { reason: `crisis:${crisis.type}` } });
+        broadcast({
+          kind: "AGENT_DIED",
+          tick,
+          actorId: targetId,
+          payload: { reason: `crisis:${crisis.type}` },
+        });
       }
     }
 
     resolvedCrises.add(crisisId);
     activeCrises.delete(crisisId);
     perCrisisResolvedAgents.delete(crisisId);
-    broadcast({ kind: "CRISIS_OVER", tick, actorId: "engine", payload: { crisisId, survived, killed } });
+    broadcast({
+      kind: "CRISIS_OVER",
+      tick,
+      actorId: "engine",
+      payload: { crisisId, survived, killed },
+    });
   }
 
   const newCrisesByAgent = new Map<string, Crisis[]>();
   for (const entry of environment.crisisSchedule) {
     if (entry.tick !== tick) continue;
     const crisisId = `${entry.type}-${tick}`;
-    const targets = (entry.targets ?? [...agents.keys()]).filter(id => agents.get(id)?.alive);
+    const targets = (entry.targets ?? [...agents.keys()]).filter(
+      (id) => agents.get(id)?.alive,
+    );
     const crisis: Crisis = {
-      id: crisisId, type: entry.type,
-      description: entry.type === "LION"
-        ? "A lion appears, threatening nearby agents!"
-        : entry.type === "HUNGER"
-          ? "You are starving and must find food to survive before it's too late!"
-          : `A ${entry.type.toLowerCase()} crisis strikes!`,
-      startedAtTick: tick, deadlineTicks: entry.deadlineTicks, targets,
+      id: crisisId,
+      type: entry.type,
+      description:
+        entry.type === "LION"
+          ? "A lion is nearby and hunting you. You must scare it away or defend yourself to survive."
+          : entry.type === "HUNGER"
+            ? "You are starving. You must find, gather, or produce food using items around you to survive."
+            : `A ${entry.type.toLowerCase()} crisis is threatening your survival.`,
+      startedAtTick: tick,
+      deadlineTicks: entry.deadlineTicks,
+      targets,
     };
     activeCrises.set(crisisId, crisis);
-    broadcast({ kind: "CRISIS_STARTED", tick, actorId: "engine", payload: crisis });
+    broadcast({
+      kind: "CRISIS_STARTED",
+      tick,
+      actorId: "engine",
+      payload: crisis,
+    });
     for (const targetId of targets) {
       const list = newCrisesByAgent.get(targetId) ?? [];
       list.push(crisis);
@@ -463,29 +779,85 @@ function doTick(): void {
 
   for (const agent of agents.values()) {
     if (!agent.alive) continue;
-    sendToAgent(agent, { kind: "TICK", tick, crises: newCrisesByAgent.get(agent.id) ?? [] });
+    const crises = newCrisesByAgent.get(agent.id) ?? [];
+    sendToAgent(agent, { kind: "TICK", tick, crises });
   }
 }
+
+// --- Demo controller HTTP endpoint ---
+createServer((req, res) => {
+  if (req.method !== "POST" || req.url !== "/crisis") {
+    res.writeHead(404).end();
+    return;
+  }
+  const chunks: Buffer[] = [];
+  req.on("data", (c: Buffer) => chunks.push(c));
+  req.on("end", () => {
+    const body = JSON.parse(Buffer.concat(chunks).toString()) as {
+      type: string;
+      targets?: string[];
+    };
+    const crisisId = `${body.type}-manual-${tick}`;
+    const targets = (body.targets ?? [...agents.keys()]).filter(
+      (id) => agents.get(id)?.alive,
+    );
+    const crisis: Crisis = {
+      id: crisisId,
+      type: body.type.toUpperCase(),
+      description:
+        body.type.toUpperCase() === "LION"
+          ? "A lion is nearby and hunting you. You must scare it away or defend yourself to survive."
+          : body.type.toUpperCase() === "HUNGER"
+            ? "You are starving. You must find, gather, or produce food using items around you to survive."
+            : `A ${body.type.toLowerCase()} crisis is threatening your survival.`,
+      startedAtTick: tick,
+      deadlineTicks: 25,
+      targets,
+    };
+    activeCrises.set(crisisId, crisis);
+    broadcast({
+      kind: "CRISIS_STARTED",
+      tick,
+      actorId: "engine",
+      payload: crisis,
+    });
+    for (const targetId of targets) {
+      const agent = agents.get(targetId);
+      if (agent?.alive)
+        sendToAgent(agent, { kind: "TICK", tick, crises: [crisis] });
+    }
+    res
+      .writeHead(200, { "Content-Type": "application/json" })
+      .end(JSON.stringify({ ok: true, crisisId }));
+  });
+}).listen(HTTP_PORT, () => console.log(`[engine] HTTP on :${HTTP_PORT}`));
 
 // --- Boot ---
 async function main(): Promise<void> {
   startHttpServer({
     port: HTTP_PORT,
-    agents, skills, activeCrises, resolvedCrises,
-    broadcast, sendToAgent,
+    agents,
+    skills,
+    activeCrises,
+    resolvedCrises,
+    broadcast,
+    sendToAgent,
     getTick: () => tick,
     spawnFromNFT,
   });
 
   startContractListeners({
-    agents, broadcast,
+    agents,
+    broadcast,
     getTick: () => tick,
     spawnFromNFT,
   });
 
   if (INFT_ENABLED && inftAdapter) {
     if (marketplaceAdapter && process.env["MARKETPLACE_CONTRACT_ADDRESS"]) {
-      await inftAdapter.approveMarketplaceForAll(process.env["MARKETPLACE_CONTRACT_ADDRESS"]).catch(console.error);
+      await inftAdapter
+        .approveMarketplaceForAll(process.env["MARKETPLACE_CONTRACT_ADDRESS"])
+        .catch(console.error);
     }
     // Delist any stale listings left over from a previous engine session
     await cleanOwnListings().catch(console.error);

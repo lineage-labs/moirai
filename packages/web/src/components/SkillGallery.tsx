@@ -21,9 +21,19 @@ function ScoreBar({ value }: { value: number }) {
 
 export function SkillGallery() {
   const skills = useStore((s) => s.skills);
+  const agents = useStore((s) => s.agents);
   const [collapsed, setCollapsed] = useState(false);
 
-  const skillList = Object.values(skills).sort((a, b) => b.tick - a.tick);
+  // Only show skills currently held by at least one living agent
+  const activeSkillIds = new Set(
+    Object.values(agents)
+      .filter((a) => a.alive)
+      .flatMap((a) => a.knownSkillIds),
+  );
+  const skillList = Object.values(skills)
+    .filter((s) => activeSkillIds.has(s.id))
+    .sort((a, b) => b.tick - a.tick);
+
   if (skillList.length === 0) return null;
 
   return (
