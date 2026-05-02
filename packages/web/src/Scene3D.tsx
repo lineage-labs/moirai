@@ -15,7 +15,7 @@ const LION_SPRITE_BASE = 1.05;
 function movingDirectionSubtitle(vel: THREE.Vector3): string {
   const { x, z } = vel;
   const len = Math.hypot(x, z);
-  if (len < 0.018) return "Closing in";
+  if (len < 0.06) return "Closing in";
   const deg = (THREE.MathUtils.radToDeg(Math.atan2(x, z)) + 360) % 360;
   const cardinals = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
   const idx = Math.round(deg / 45) % 8;
@@ -108,7 +108,7 @@ function LionActor({ route }: { route: LionRoute }) {
       const sx = (worldScratch.current.x * 0.5 + 0.5) * size.width;
       const sy = (-worldScratch.current.y * 0.5 + 0.5) * size.height;
       const subtitle = hasTangent ? movingDirectionSubtitle(derivOut.current) : "On the prowl";
-      useStore.getState().setLionHud({ x: sx, y: sy, subtitle });
+      useStore.getState().setLionHud({ x: Math.round(sx), y: Math.round(sy), subtitle });
     }
   });
 
