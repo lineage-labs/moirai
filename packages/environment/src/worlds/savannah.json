@@ -6,7 +6,10 @@
     "sticks can be sharpened into spears or clubs",
     "fire repels most animals including lions",
     "loud noises and shouting can startle and scare lions away",
-    "berries and plants provide nourishment"
+    "berries and plants provide nourishment",
+    "dry grass can be twisted into a snare to catch small animals",
+    "rocks can be used to crack open nuts or dig up edible roots",
+    "fire made from dry grass and rocks can be used to cook food"
   ],
   "resources": ["rocks", "sticks", "berries", "water", "dry grass"],
   "topology": "open",

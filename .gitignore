@@ -8,6 +8,7 @@ dist
 .vscode
 .idea
 coverage
+typechain-types
 
 # Local AXL mesh keys (docker-compose.axl.yml)
 docker/axl/keys/*.pem

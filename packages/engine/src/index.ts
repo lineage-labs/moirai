@@ -456,7 +456,11 @@ function doTick(): void {
     const targets = (entry.targets ?? [...agents.keys()]).filter(id => agents.get(id)?.alive);
     const crisis: Crisis = {
       id: crisisId, type: entry.type,
-      description: entry.type === "LION" ? "A lion appears, threatening nearby agents!" : `A ${entry.type.toLowerCase()} crisis strikes!`,
+      description: entry.type === "LION"
+        ? "A lion appears, threatening nearby agents!"
+        : entry.type === "HUNGER"
+          ? "You are starving and must find food to survive before it's too late!"
+          : `A ${entry.type.toLowerCase()} crisis strikes!`,
       startedAtTick: tick, deadlineTicks: entry.deadlineTicks, targets,
     };
     activeCrises.set(crisisId, crisis);
