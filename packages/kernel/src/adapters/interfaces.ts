@@ -18,7 +18,7 @@ export interface IComputeAdapter {
 }
 
 export interface IStorageAdapter {
-  putSkill(skill: Skill): Promise<{ id: string }>;
+  putSkill(skill: Skill): Promise<{ id: string; sequenceId?: number }>;
   getSkill(id: string): Promise<Skill | null>;
   listSkills(): Promise<Skill[]>;
   appendEvent(event: Event): Promise<void>;

@@ -95,11 +95,9 @@ export function SkillGallery() {
         >
           {skillList.map((skill) => {
             const inventor = getPersonality(skill.inventedBy);
-            // Primary 0G link: use reasonReceipt as the submission reference
-            const ogLink = skill.reasonReceipt
-              ? `${OG_BASE}/${skill.reasonReceipt}`
-              : skill.id
-              ? `${OG_BASE}/${skill.id}`
+            // Use txSeq (sequence ID) for the storagescan URL — that's what the scanner indexes by
+            const ogLink = skill.storageSequenceId != null
+              ? `${OG_BASE}/${skill.storageSequenceId}`
               : null;
 
             return (

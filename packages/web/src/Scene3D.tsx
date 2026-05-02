@@ -76,37 +76,57 @@ function LionActor({ route }: { route: LionRoute }) {
   // Return-journey state: saved when active→inactive
   const wasActiveRef = useRef(false);
   const returnRef = useRef<{ savedRoute: SavedRoute; progress: number; startMs: number } | null>(null);
+  // Always keep the last-active route so retreat can use real bezier, not the degenerate post-crisis one
+  const lastActiveRouteRef = useRef<SavedRoute & { startedAtMs: number }>({
+    start:       new THREE.Vector3(LION_ENTRY_WORLD_POINT.x, 0.95, LION_ENTRY_WORLD_POINT.z),
+    control:     new THREE.Vector3(LION_ENTRY_WORLD_POINT.x, 0.95, LION_ENTRY_WORLD_POINT.z),
+    final:       new THREE.Vector3(LION_ENTRY_WORLD_POINT.x, 0.95, LION_ENTRY_WORLD_POINT.z),
+    startedAtMs: Date.now(),
+  });
 
-  useFrame(({ clock }, delta) => {
+  useFrame((_state, delta) => {
     if (!group.current || !materialRef.current) return;
 
-    // ── Detect kill: active→inactive ──────────────────────────────────────
-    if (wasActiveRef.current && !lionState.active && !returnRef.current) {
-      const forwardProgress = THREE.MathUtils.clamp((Date.now() - route.startedAtMs) / 30000, 0, 1);
-      returnRef.current = {
-        savedRoute: {
-          start:   route.start.clone(),
-          control: route.control.clone(),
-          final:   route.final.clone(),
-        },
-        progress: forwardProgress,
-        startMs:  Date.now(),
+    // Always snapshot wasActive FIRST so all paths below see consistent transition
+    const prevActive = wasActiveRef.current;
+    wasActiveRef.current = lionState.active;
+
+    // Save real route every frame while hunting (before it becomes degenerate after crisis ends)
+    if (lionState.active) {
+      lastActiveRouteRef.current = {
+        start:       route.start.clone(),
+        control:     route.control.clone(),
+        final:       route.final.clone(),
+        startedAtMs: route.startedAtMs,
       };
     }
-    wasActiveRef.current = lionState.active;
+
+    // ── Detect kill: active→inactive → start retreat ───────────────────────
+    if (prevActive && !lionState.active && !returnRef.current) {
+      const r = lastActiveRouteRef.current;
+      const forwardProgress = THREE.MathUtils.clamp((Date.now() - r.startedAtMs) / 30000, 0, 1);
+      returnRef.current = {
+        savedRoute: { start: r.start.clone(), control: r.control.clone(), final: r.final.clone() },
+        progress:   Math.max(0.05, forwardProgress),
+        startMs:    Date.now(),
+      };
+    }
+
+    // ── If a new hunt started while retreating, cancel retreat ─────────────
+    if (returnRef.current && lionState.active) {
+      returnRef.current = null;
+    }
 
     // ── Return animation ───────────────────────────────────────────────────
     if (returnRef.current) {
       const r = returnRef.current;
-      const returnDuration = Math.max(800, r.progress * 5000); // proportional, min 0.8s
+      const returnDuration = Math.max(800, r.progress * 5000);
       const t = Math.min(1, (Date.now() - r.startMs) / returnDuration);
-      const retProgress = r.progress * (1 - t); // walk backwards along bezier
+      const retProgress = r.progress * (1 - t);
       const retPos = quadraticBezier3D(r.savedRoute.start, r.savedRoute.control, r.savedRoute.final, retProgress, curveDest.current);
       group.current.position.copy(retPos);
 
-      // Keep banner tracking the retreating lion
-      worldScratch.current.copy(retPos);
-      worldScratch.current.project(camera);
+      worldScratch.current.copy(retPos).project(camera);
       const sx = (worldScratch.current.x * 0.5 + 0.5) * size.width;
       const sy = (-worldScratch.current.y * 0.5 + 0.5) * size.height;
       useStore.getState().setLionHud({ x: Math.round(sx), y: Math.round(sy), subtitle: "Retreating…" });
@@ -115,15 +135,16 @@ function LionActor({ route }: { route: LionRoute }) {
         returnRef.current = null;
         useStore.getState().setLionHud(null);
       }
-      return; // skip normal forward-hunt update
+      return;
     }
 
-    // ── Normal hunt update ─────────────────────────────────────────────────
+    // ── Idle (no crisis, no retreat) ───────────────────────────────────────
     if (!lionState.active) {
       useStore.getState().setLionHud(null);
       return;
     }
 
+    // ── Normal hunt ────────────────────────────────────────────────────────
     const progress = THREE.MathUtils.clamp((Date.now() - route.startedAtMs) / 30000, 0, 1);
     const destination = quadraticBezier3D(route.start, route.control, route.final, progress, curveDest.current);
     group.current.position.lerp(destination, Math.min(delta * 2.8, 1));
@@ -135,15 +156,12 @@ function LionActor({ route }: { route: LionRoute }) {
     const hasTangent = progress > 0.002;
     if (hasTangent) {
       quadraticBezierDerivative3D(route.start, route.control, route.final, progress, derivOut.current, derivTmp.current);
-      const flip = derivOut.current.x >= 0 ? 1 : -1;
-      group.current.scale.set(LION_SPRITE_BASE * flip, LION_SPRITE_BASE, 1);
+      group.current.scale.set(LION_SPRITE_BASE * (derivOut.current.x >= 0 ? 1 : -1), LION_SPRITE_BASE, 1);
     } else {
       group.current.scale.set(LION_SPRITE_BASE, LION_SPRITE_BASE, 1);
     }
 
-    // Banner tracks the lion's current position on the curve
-    worldScratch.current.copy(destination);
-    worldScratch.current.project(camera);
+    worldScratch.current.copy(destination).project(camera);
     const sx = (worldScratch.current.x * 0.5 + 0.5) * size.width;
     const sy = (-worldScratch.current.y * 0.5 + 0.5) * size.height;
     const subtitle = hasTangent ? movingDirectionSubtitle(derivOut.current) : "On the prowl";

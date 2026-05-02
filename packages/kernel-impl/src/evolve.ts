@@ -149,14 +149,14 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
   };
 
   console.error(`[evolve:${context.agentId}] writing skill "${skill.name}" (${skill.id}) to 0G Storage`);
-  await storage.putSkill(skill);
-  console.error(`[evolve:${context.agentId}] skill stored ✓ id=${skill.id}`);
+  const stored = await storage.putSkill(skill);
+  console.error(`[evolve:${context.agentId}] skill stored ✓ id=${skill.id}${stored.sequenceId != null ? ` sequenceId=${stored.sequenceId}` : ""}`);
 
   emit({
     kind: "SKILL_ACCEPTED",
     tick: context.tick,
     actorId: context.agentId,
-    payload: { skill },
+    payload: { skill, storageSequenceId: stored.sequenceId },
   });
 
   return { status: "accepted", skill };

@@ -30,7 +30,12 @@ export function computeLionFinalPoint({
   centroid.x /= targets.length;
   centroid.z /= targets.length;
 
-  let final = targets.length > 1 ? { ...centroid } : { x: centroid.x + 0.62, z: centroid.z + 0.78 };
+  // Pack hunt: land exactly between targeted agents (screen + curve read as one confrontation).
+  if (targets.length > 1) {
+    return { x: centroid.x, z: centroid.z };
+  }
+
+  let final = { x: centroid.x + 0.62, z: centroid.z + 0.78 };
   const closestTarget = targets
     .map((target) => ({ target, distance: distance(final, target.point) }))
     .sort((a, b) => a.distance - b.distance)[0]!.target;
