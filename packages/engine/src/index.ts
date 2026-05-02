@@ -46,6 +46,8 @@ let paused = false;
 
 // agentId → tokenId for tokens already in the engine wallet (populated at boot)
 const walletTokens = new Map<string, string>();
+// agentId → image data URI from NFT metadata (populated alongside walletTokens at boot)
+const walletImages = new Map<string, string>();
 
 function makeSkillStub(s: { id: string; name: string }): Skill {
   return {
@@ -238,6 +240,9 @@ function spawnAgent(
       if (cachedTokenId) {
         // Own token from a previous session — reuse without minting
         entry.tokenId = cachedTokenId;
+        // Restore image from NFT metadata so subsequent updateMetadata calls don't wipe it
+        const nftImage = walletImages.get(id);
+        if (nftImage) entry.image = nftImage;
         console.log(`[engine] [iNFT] ${id}: reusing wallet tokenId=${cachedTokenId}`);
         broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId: cachedTokenId } });
       } else {
@@ -505,6 +510,7 @@ async function main(): Promise<void> {
         try {
           const metadata = await inftAdapter.readMetadata(tokenId);
           walletTokens.set(metadata.agentId, tokenId);
+          if (metadata.image) walletImages.set(metadata.agentId, metadata.image);
         } catch (err) {
           console.error(`[engine] could not read metadata for tokenId=${tokenId}:`, err);
         }

@@ -5,6 +5,7 @@ export type WorldActorPoint = { id: string; point: WorldPoint };
 
 export const WORLD_SCALE = 0.018;
 export const WORLD_CENTER = { x: 400, y: 240 };
+export const LION_ENTRY_WORLD_POINT: WorldPoint = { x: -8.5, z: -5 };
 
 export function worldPointFromScreenPosition(position: ScreenPosition): WorldPoint {
   return {
@@ -29,7 +30,7 @@ export function computeLionFinalPoint({
   centroid.x /= targets.length;
   centroid.z /= targets.length;
 
-  let final = { x: centroid.x + 0.62, z: centroid.z + 0.78 };
+  let final = targets.length > 1 ? { ...centroid } : { x: centroid.x + 0.62, z: centroid.z + 0.78 };
   const closestTarget = targets
     .map((target) => ({ target, distance: distance(final, target.point) }))
     .sort((a, b) => a.distance - b.distance)[0]!.target;

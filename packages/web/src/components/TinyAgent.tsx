@@ -21,12 +21,26 @@ const statusColor: Record<AgentInfo["status"], string> = {
   crisis: "#ef5a45",
 };
 
+function healthPct(agent: AgentInfo): number {
+  if (!agent.alive) return 0;
+  if (!agent.hunger || agent.hunger.threshold <= 0) return 85;
+  return Math.max(0, Math.min(100, Math.round((1 - agent.hunger.current / agent.hunger.threshold) * 100)));
+}
+
+function healthColor(pct: number): string {
+  if (pct > 55) return "#4cdb6e";
+  if (pct > 25) return "#e5bd5d";
+  return "#e45a45";
+}
+
 export function TinyAgent({ agent, position, walkOffset, targeted, selected }: TinyAgentProps) {
   const selectAgent = useStore((state) => state.selectAgent);
   const personality = getPersonality(agent.id);
   const x = position.x + (walkOffset?.dx ?? 0);
   const y = position.y + (walkOffset?.dy ?? 0);
   const color = agent.alive ? statusColor[agent.status] : "#777067";
+  const hp = healthPct(agent);
+  const hpColor = healthColor(hp);
 
   return (
     <motion.button
@@ -37,8 +51,8 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
       style={{
         position: "absolute",
         transform: "translate(-50%, -72%)",
-        width: 58,
-        height: 78,
+        width: 88,
+        height: 120,
         border: "none",
         padding: 0,
         background: "transparent",
@@ -57,42 +71,69 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
           style={{
             position: "absolute",
             left: "50%",
-            bottom: 6,
-            width: 38,
-            height: 12,
+            bottom: 4,
+            width: 56,
+            height: 14,
             transform: "translateX(-50%)",
             borderRadius: "50%",
             background: "rgba(0,0,0,0.35)",
             filter: "blur(3px)",
           }}
         />
+        {/* Health bar */}
         <div
           style={{
             position: "absolute",
             left: "50%",
-            top: 7,
-            width: 40,
-            height: 40,
+            top: -6,
+            width: 62,
+            height: 5,
+            transform: "translateX(-50%)",
+            borderRadius: 999,
+            background: "rgba(0,0,0,0.55)",
+            overflow: "hidden",
+            border: "1px solid rgba(0,0,0,0.4)",
+          }}
+        >
+          <motion.div
+            animate={{ width: `${hp}%` }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            style={{
+              height: "100%",
+              background: hpColor,
+              borderRadius: 999,
+              boxShadow: hp <= 25 ? `0 0 6px ${hpColor}` : "none",
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: 4,
+            width: 64,
+            height: 64,
             transform: "translateX(-50%)",
             borderRadius: "50%",
-            border: selected ? "3px solid #f6cf74" : `2px solid ${color}`,
+            border: selected ? "3px solid #f6cf74" : `2.5px solid ${color}`,
             background: "rgba(25,18,10,0.82)",
             boxShadow: selected
-              ? "0 0 18px rgba(246,207,116,0.68), 0 8px 18px rgba(0,0,0,0.45)"
+              ? "0 0 22px rgba(246,207,116,0.72), 0 8px 18px rgba(0,0,0,0.45)"
               : "0 8px 18px rgba(0,0,0,0.45)",
             overflow: "hidden",
             zIndex: 2,
           }}
         >
-          <img src={getAgentAvatar(agent.id)} alt="" width={40} height={40} style={{ display: "block" }} />
+          <img src={getAgentAvatar(agent.id)} alt="" width={64} height={64} style={{ display: "block" }} />
         </div>
         <div
           style={{
             position: "absolute",
             left: "50%",
-            top: 46,
-            width: 16,
-            height: 18,
+            top: 68,
+            width: 20,
+            height: 22,
             transform: "translateX(-50%)",
             borderRadius: "8px 8px 4px 4px",
             background: `linear-gradient(180deg, ${color}, rgba(38,29,17,0.92))`,
@@ -104,11 +145,11 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
           style={{
             position: "absolute",
             left: "50%",
-            top: 64,
+            top: 92,
             transform: "translateX(-50%)",
             color: "#f1d99e",
             fontFamily: F_LABEL,
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: 700,
             lineHeight: 1,
             textShadow: "0 2px 4px rgba(0,0,0,0.9)",
@@ -117,8 +158,20 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
         >
           {personality.name}
         </div>
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: 106,
+            transform: "translateX(-50%)",
+            fontSize: 13,
+            lineHeight: 1,
+          }}
+        >
+          {!agent.alive ? "💀" : targeted ? "🏃" : agent.status === "reasoning" ? "🤔" : "😊"}
+        </div>
         {targeted && (
-          <div style={{ position: "absolute", left: 0, right: 0, top: 32, height: 40, zIndex: 1 }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: 38, height: 46, zIndex: 1 }}>
             <LionTargetRing />
           </div>
         )}

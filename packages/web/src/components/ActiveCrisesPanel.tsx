@@ -7,14 +7,21 @@ const F = "'DM Sans', system-ui, sans-serif";
 export function ActiveCrisesPanel() {
   const crises = useStore((state) => state.crises);
   const tick = useStore((state) => state.tick);
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
   const active = Object.values(crises).filter((crisis) => !crisis.resolved);
   const lionIcon = getEventIcon("CRISIS_STARTED");
+
+  React.useEffect(() => {
+    if (active.length === 0) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [active.length]);
 
   return (
     <aside
       style={{
         position: "absolute",
-        top: 92,
+        top: 132,
         right: 14,
         width: 218,
         zIndex: 44,
@@ -39,6 +46,7 @@ export function ActiveCrisesPanel() {
             const type = crisis.type.toLowerCase();
             const eta = Math.max(0, crisis.startedAtTick + crisis.deadlineTicks - tick);
             const isLion = type === "lion";
+            const etaSeconds = Math.max(0, Math.ceil((30000 - (nowMs - crisis.startedAtMs)) / 1000));
             return (
               <div key={crisis.id} style={{ padding: 9, borderRadius: 9, background: "rgba(0,0,0,0.24)", border: "1px solid rgba(255,220,150,0.10)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -49,7 +57,9 @@ export function ActiveCrisesPanel() {
                     <div style={{ color: isLion ? "#ff9a7a" : "#e7c684", fontSize: 12, fontWeight: 800, textTransform: "capitalize" }}>
                       {type} {isLion ? "Hunting" : "Crisis"}
                     </div>
-                    <div style={{ color: "#a99578", fontSize: 10 }}>ETA: {eta} ticks</div>
+                    <div style={{ color: "#a99578", fontSize: 10 }}>
+                      ETA: {isLion ? `${etaSeconds}s` : `${eta} ticks`}
+                    </div>
                   </div>
                   <span style={{ color: isLion ? "#ff8c74" : "#dfbd70", fontSize: 8, fontWeight: 800, border: "1px solid currentColor", borderRadius: 4, padding: "2px 4px" }}>
                     {isLion ? "HIGH" : "MED"}

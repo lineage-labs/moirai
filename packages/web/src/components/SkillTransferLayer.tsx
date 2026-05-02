@@ -40,20 +40,20 @@ export function SkillTransferLayer() {
           const fromY = from.y;
           const toX = to.x;
           const toY = to.y;
-          const midY = Math.min(fromY, toY) - 44;
-          const d = `M ${fromX} ${fromY - 30} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY - 30}`;
+          const d = `M ${fromX} ${fromY} L ${toX} ${toY}`;
           return (
             <motion.path
               key={transfer.id}
               d={d}
               fill="none"
-              stroke="rgba(156, 224, 148, 0.9)"
-              strokeWidth={2}
-              strokeDasharray="4 8"
+              stroke="rgba(220, 210, 80, 0.92)"
+              strokeWidth={2.5}
+              strokeDasharray="10 7"
+              strokeLinecap="round"
               initial={{ pathLength: 0, opacity: 0 }}
               animate={{ pathLength: 1, opacity: [0, 1, 1, 0] }}
               transition={{ duration: 2.6, ease: "easeInOut" }}
-              filter="drop-shadow(0 0 5px rgba(156,224,148,0.85))"
+              filter="drop-shadow(0 0 6px rgba(220,210,80,0.8))"
             />
           );
         })}
@@ -63,8 +63,7 @@ export function SkillTransferLayer() {
         const to = displayPositions[transfer.to];
         if (!from || !to) return [];
         return [
-          <FloatingSkillLabel key={`${transfer.id}-from`} x={from.x} y={from.y - 70} text={transfer.skillName} />,
-          <FloatingSkillLabel key={`${transfer.id}-to`} x={to.x} y={to.y - 70} text={transfer.skillName} />,
+          <FloatingSkillLabel key={`${transfer.id}-mid`} x={(from.x + to.x) / 2} y={(from.y + to.y) / 2} text={transfer.skillName} />,
         ];
       })}
     </div>
