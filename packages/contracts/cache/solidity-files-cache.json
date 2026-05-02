@@ -39,8 +39,8 @@
       ]
     },
     "/Users/iri/Dev/moirai/packages/contracts/contracts/AgentNFT.sol": {
-      "lastModificationDate": 1777700961081,
-      "contentHash": "7aa94b689f09afcaceb315338c705d85",
+      "lastModificationDate": 1777743095199,
+      "contentHash": "5d4b5a10f7794e4b403747d64f2d1888",
       "sourceName": "contracts/AgentNFT.sol",
       "solcConfig": {
         "version": "0.8.26",

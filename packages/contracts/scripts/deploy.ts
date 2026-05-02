@@ -5,13 +5,12 @@ async function main() {
   console.log(`Deploying with account: ${deployer.address}`);
   console.log(`Balance: ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} ETH\n`);
 
-  // 1. Deploy AgentNFT (comment out to redeploy marketplace only)
-  // const NFTFactory = await ethers.getContractFactory("AgentNFT");
-  // const nft = await NFTFactory.deploy();
-  // await nft.waitForDeployment();
-  // const nftAddress = await nft.getAddress();
-  // console.log(`AgentNFT deployed:        ${nftAddress}`);
-  const nftAddress = process.env.INFT_CONTRACT_ADDRESS!; // reuse existing
+  // 1. Deploy AgentNFT
+  const NFTFactory = await ethers.getContractFactory("AgentNFT");
+  const nft = await NFTFactory.deploy();
+  await nft.waitForDeployment();
+  const nftAddress = await nft.getAddress();
+  console.log(`AgentNFT deployed:        ${nftAddress}`);
 
   // 2. Deploy AgentMarketplace (points to the NFT contract)
   const MarketFactory = await ethers.getContractFactory("AgentMarketplace");
@@ -21,7 +20,7 @@ async function main() {
   console.log(`AgentMarketplace deployed: ${marketAddress}`);
 
   console.log(`\n--- Add to .env ---`);
-  // console.log(`INFT_CONTRACT_ADDRESS=${nftAddress}`); // unchanged when redeploying marketplace only
+  console.log(`INFT_CONTRACT_ADDRESS=${nftAddress}`);
   console.log(`MARKETPLACE_CONTRACT_ADDRESS=${marketAddress}`);
 }
 
