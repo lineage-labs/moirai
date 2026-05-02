@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { getAgentAvatar } from "../agentAvatars";
 import { getItemIcon, getItemLabel } from "../items";
 import { getAgentInventory, getPersonality } from "../personalities";
-import { useStore, type AgentInfo } from "../store";
+import { useStore, sendWs, type AgentInfo } from "../store";
 
 const F = "'DM Sans', system-ui, sans-serif";
 
@@ -44,17 +44,70 @@ export function SelectedAgentPanel() {
   const selectAgent = useStore((state) => state.selectAgent);
   const lionState = useStore((state) => state.lionState);
   const skills = useStore((state) => state.skills);
+  const agentTokens = useStore((state) => state.agentTokens);
+  const listedAgentIds = useStore((state) => state.listedAgentIds);
   const agent = selectedAgentId ? agents[selectedAgentId] : undefined;
+
+  const addToast = useStore((state) => state.addToast);
+  const events = useStore((state) => state.events);
+
+  // Per-agent market state so switching agents never clobbers an in-flight operation
+  const [marketStates, setMarketStates] = useState<Record<string, "idle" | "pending" | "listed" | "error">>({});
+  const [marketErrors, setMarketErrors] = useState<Record<string, string>>({});
+  const [listPrices, setListPrices] = useState<Record<string, string>>({});
+
+  // React to WS events for this agent to transition pending state
+  const lastMarketEvent = selectedAgentId
+    ? events.filter((e) => (e.kind === "AGENT_LISTED" || e.kind === "AGENT_DELISTED" || e.kind === "MARKETPLACE_ERROR") && e.actorId === selectedAgentId).at(-1)
+    : undefined;
+
+  useEffect(() => {
+    if (!lastMarketEvent || !selectedAgentId) return;
+    if (lastMarketEvent.kind === "AGENT_LISTED") {
+      setMarketStates((prev) => ({ ...prev, [selectedAgentId]: "idle" }));
+      addToast(`Agent ${agents[selectedAgentId]?.name ?? getPersonality(selectedAgentId).name} listed on marketplace`);
+    } else if (lastMarketEvent.kind === "AGENT_DELISTED") {
+      setMarketStates((prev) => ({ ...prev, [selectedAgentId]: "idle" }));
+      addToast(`Agent ${agents[selectedAgentId]?.name ?? getPersonality(selectedAgentId).name} delisted`);
+    } else if (lastMarketEvent.kind === "MARKETPLACE_ERROR") {
+      const msg = (lastMarketEvent.payload?.message as string) ?? "Request failed";
+      setMarketStates((prev) => ({ ...prev, [selectedAgentId]: "error" }));
+      setMarketErrors((prev) => ({ ...prev, [selectedAgentId]: msg }));
+    }
+  }, [lastMarketEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!agent) return null;
 
-  const personality = getPersonality(agent.id);
-  const inventory = getAgentInventory(agent.id);
-  const targeted = lionState.active && lionState.targets.includes(agent.id);
+  const agentId = agent.id;
+  const tokenId = agentTokens[agentId];
+  const isListed = listedAgentIds[agentId] ?? false;
+  const marketState = isListed ? "listed" : (marketStates[agentId] ?? "idle");
+  const marketError = marketErrors[agentId] ?? "";
+  const listPrice = listPrices[agentId] ?? "1";
+
+  function setListPrice(id: string, v: string) {
+    setListPrices((prev) => ({ ...prev, [id]: v }));
+  }
+
+  function handleList() {
+    if (!tokenId) return;
+    setMarketStates((prev) => ({ ...prev, [agentId]: "pending" }));
+    sendWs({ kind: "MARKETPLACE_LIST", agentId, tokenId, salePriceWei: ogToWei(listPrice) });
+  }
+
+  function handleDelist() {
+    if (!tokenId) return;
+    setMarketStates((prev) => ({ ...prev, [agentId]: "pending" }));
+    sendWs({ kind: "MARKETPLACE_DELIST", agentId, tokenId });
+  }
+
+  const personality = getPersonality(agentId);
+  const inventory = getAgentInventory(agentId);
+  const targeted = lionState.active && lionState.targets.includes(agentId);
   const energy = energyRatio(agent);
   const hunger = 1 - energy;
   const health = agent.alive ? (targeted ? 0.72 : 0.88) : 0;
-  const stableId = `AG-${String(hashAgent(agent.id) * 17).padStart(4, "0").slice(0, 4)}`;
+  const stableId = `AG-${String(hashAgent(agentId) * 17).padStart(4, "0").slice(0, 4)}`;
 
   return (
     <aside
@@ -86,10 +139,17 @@ export function SelectedAgentPanel() {
         Selected Agent
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
-        <img src={getAgentAvatar(agent.id)} alt={`${personality.name} avatar`} width={58} height={58} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <img src={agent.image ?? getAgentAvatar(agentId)} alt={`${personality.name} avatar`} width={58} height={58} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
+          {marketState === "listed" && (
+            <div style={{ position: "absolute", bottom: -2, right: -4, background: "#8fd16d", color: "#1a2e12", fontSize: 7, fontWeight: 900, padding: "2px 5px", borderRadius: 4, letterSpacing: 0.4, textTransform: "uppercase", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }}>
+              FOR SALE
+            </div>
+          )}
+        </div>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#f4dfb2" }}>{personality.name}</div>
-          <div style={{ color: "#bda16f", fontSize: 10 }}>AGE {18 + (hashAgent(agent.id) % 14)}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#f4dfb2" }}>{agent.name ?? personality.name}</div>
+          <div style={{ color: "#bda16f", fontSize: 10 }}>AGE {18 + (hashAgent(agentId) % 14)}</div>
           <div style={{ color: "#8d7b63", fontSize: 9 }}>ID: {stableId}</div>
         </div>
       </div>
@@ -129,8 +189,76 @@ export function SelectedAgentPanel() {
           ))}
         </div>
       </Section>
+
+      {tokenId && (
+        <Section title="Marketplace">
+          {marketState === "error" && (
+            <div style={{ color: "#ff7b62", fontSize: 10, marginBottom: 6, wordBreak: "break-word" }}>
+              {marketError || "Request failed — check engine logs"}
+            </div>
+          )}
+          {marketState === "listed" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 6, background: "rgba(143,209,109,0.10)", border: "1px solid rgba(143,209,109,0.22)" }}>
+                <span style={{ color: "#8fd16d", fontSize: 10 }}>✓</span>
+                <span style={{ color: "#a9c882", fontSize: 10, fontWeight: 700 }}>Listed for sale</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDelist}
+                disabled={marketState !== "listed"}
+                style={btnStyle("#e45a45", "#ff8c74")}
+              >
+                Delist Agent
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: "#a88f6a", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Price (0G)</span>
+                <input
+                  value={listPrice}
+                  onChange={(e) => setListPrice(agentId, e.target.value)}
+                  style={{ flex: 1, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(231,190,110,0.18)", borderRadius: 5, color: "#f0dfbd", fontSize: 10, padding: "3px 6px", fontFamily: F }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleList}
+                disabled={marketState === "pending"}
+                style={btnStyle("#8fd16d", "#a9c882")}
+              >
+                {marketState === "pending" ? "Listing…" : "List on Marketplace"}
+              </button>
+            </div>
+          )}
+        </Section>
+      )}
     </aside>
   );
+}
+
+function ogToWei(og: string): string {
+  const parts = og.trim().split(".");
+  const whole = parts[0] || "0";
+  const decimal = (parts[1] || "").padEnd(18, "0").slice(0, 18);
+  return (BigInt(whole) * 1_000_000_000_000_000_000n + BigInt(decimal)).toString();
+}
+
+function btnStyle(borderColor: string, color: string): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "6px 10px",
+    borderRadius: 6,
+    border: `1px solid ${borderColor}44`,
+    background: `${borderColor}18`,
+    color,
+    fontSize: 10,
+    fontWeight: 700,
+    fontFamily: F,
+    cursor: "pointer",
+    transition: "all 0.15s",
+  };
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

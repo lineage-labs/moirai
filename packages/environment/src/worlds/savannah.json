@@ -18,9 +18,21 @@
       "deadlineTicks": 30
     },
     {
-      "tick": 40,
+      "tick": 45,
       "type": "LION",
       "targets": ["dave"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 60,
+      "type": "HUNGER",
+      "targets": ["alice"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 62,
+      "type": "HUNGER",
+      "targets": ["charlie"],
       "deadlineTicks": 30
     }
   ]

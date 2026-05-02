@@ -13,6 +13,7 @@
     "@moirai/shared": "workspace:*",
     "@moirai/environment": "workspace:*",
     "@moirai/personality": "workspace:*",
+    "@moirai/inft": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

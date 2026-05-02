@@ -9,5 +9,5 @@
     "selfEval": "You are optimistic — accept plans that have a fighting chance."
   },
   "inventory": ["rocks", "dry grass"],
-  "hunger": { "rate": 1, "threshold": 60 }
+  "hunger": { "rate": 1, "threshold": 90 }
 }

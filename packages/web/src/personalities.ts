@@ -26,12 +26,10 @@ const PERSONALITIES: Record<string, PersonalitySummary> = {
 };
 
 export function getPersonality(agentId: string): PersonalitySummary {
-  return PERSONALITIES[agentId] ?? {
-    id: agentId,
-    name: agentId,
-    inventory: [],
-    traits: [],
-  };
+  if (PERSONALITIES[agentId]) return PERSONALITIES[agentId]!;
+  // For imported agents like "henry-16", fall back to base personality "henry"
+  const baseId = agentId.split("-")[0]!;
+  return PERSONALITIES[baseId] ?? { id: agentId, name: agentId, inventory: [], traits: [] };
 }
 
 export function getAgentInventory(agentId: string): string[] {

@@ -9,7 +9,7 @@ export type EventBase = {
 };
 
 export type WorldTickEvent = EventBase & { kind: "WORLD_TICK" };
-export type AgentSpawnedEvent = EventBase & { kind: "AGENT_SPAWNED"; payload: { personalityId: string; traits?: string[] } };
+export type AgentSpawnedEvent = EventBase & { kind: "AGENT_SPAWNED"; payload: { personalityId: string; name?: string; traits?: string[]; image?: string } };
 export type AgentDiedEvent = EventBase & { kind: "AGENT_DIED"; payload: { reason: string } };
 export type CrisisStartedEvent = EventBase & { kind: "CRISIS_STARTED"; payload: Crisis };
 export type CrisisResolvedEvent = EventBase & { kind: "CRISIS_RESOLVED"; payload: { crisisId: string; survived?: string[]; died?: string[]; totalAlive?: number } };
@@ -27,6 +27,11 @@ export type SkillLearnedEvent = EventBase & { kind: "SKILL_LEARNED"; payload: { 
 export type SkillInheritedEvent = EventBase & { kind: "SKILL_INHERITED"; payload: { skillId: string } };
 export type SkillDeclinedEvent = EventBase & { kind: "SKILL_DECLINED"; payload: { from: AgentId; skillId: string; skillName: string; skillEffect: string; score: number; reason?: string } };
 export type AgentHungerEvent = EventBase & { kind: "AGENT_HUNGER"; payload: { hunger: number; threshold: number } };
+export type AgentMintedEvent = EventBase & { kind: "AGENT_MINTED"; payload: { tokenId: string } };
+export type AgentListedEvent = EventBase & { kind: "AGENT_LISTED"; payload: { tokenId: string; salePriceWei: string } };
+export type AgentDelistedEvent = EventBase & { kind: "AGENT_DELISTED"; payload: { tokenId: string; reason: "sold" | "reasoning" | "manual" } };
+export type AgentSoldEvent = EventBase & { kind: "AGENT_SOLD"; payload: { tokenId: string } };
+export type AgentImportedEvent = EventBase & { kind: "AGENT_IMPORTED"; payload: { tokenId: string; skills: string[] } };
 
 export type Event =
   | WorldTickEvent
@@ -47,6 +52,11 @@ export type Event =
   | AxlMessageEvent
   | SkillTaughtEvent
   | SkillLearnedEvent
-  | SkillInheritedEvent;
+  | SkillInheritedEvent
+  | AgentMintedEvent
+  | AgentListedEvent
+  | AgentDelistedEvent
+  | AgentSoldEvent
+  | AgentImportedEvent;
 
 export type EventKind = Event["kind"];

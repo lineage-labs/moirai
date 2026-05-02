@@ -69,6 +69,9 @@ importers:
       '@moirai/environment':
         specifier: workspace:*
         version: link:../environment
+      '@moirai/inft':
+        specifier: workspace:*
+        version: link:../inft
       '@moirai/personality':
         specifier: workspace:*
         version: link:../personality
@@ -98,6 +101,22 @@ importers:
         specifier: workspace:*
         version: link:../shared
     devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  packages/inft:
+    dependencies:
+      '@0gfoundation/0g-ts-sdk':
+        specifier: ^1.2.6
+        version: 1.2.6(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
+      ethers:
+        specifier: ^6.0.0
+        version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

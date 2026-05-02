@@ -20,7 +20,14 @@ type EventKind =
   | "SKILL_LEARNED"
   | "SKILL_INHERITED"
   | "SKILL_DECLINED"
-  | "CRISIS_OVER";
+  | "CRISIS_OVER"
+  | "AGENT_MINTED"
+  | "AGENT_LISTED"
+  | "AGENT_DELISTED"
+  | "AGENT_SOLD"
+  | "AGENT_IMPORTED"
+  | "MARKETPLACE_ERROR"
+  | "MARKETPLACE_LISTINGS";
 
 export type GameEvent = {
   kind: EventKind;
@@ -32,6 +39,8 @@ export type GameEvent = {
 
 export type AgentInfo = {
   id: string;
+  name?: string;
+  image?: string;
   alive: boolean;
   knownSkillIds: string[];
   status: "idle" | "reasoning" | "crisis";
@@ -76,6 +85,18 @@ export type LionState = {
   targets: string[];
 };
 
+export type MarketListing = {
+  tokenId: string;
+  sellerEngine: string;
+  salePriceWei: string;
+  worldId: string;
+  active: boolean;
+  name?: string;
+  traits?: string[];
+  image?: string;
+  skills?: Array<{ id: string; name: string }>;
+};
+
 export type SkillTransferInfo = {
   id: string;
   from: string;
@@ -96,11 +117,17 @@ type Store = {
   selectedAgentId: string | null;
   walkOffsets: Record<string, WalkOffset>;
   skillTransfers: SkillTransferInfo[];
+  agentTokens: Record<string, string>; // agentId → tokenId
+  listedAgentIds: Record<string, boolean>; // agentId → listed?
+  marketListings: MarketListing[];
+  toasts: { id: string; message: string; expiresAtMs: number }[];
 
   handleEvent(ev: GameEvent): void;
   setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
   selectAgent(agentId: string | null): void;
   clearExpiredSkillTransfers(nowMs?: number): void;
+  addToast(message: string): void;
+  clearExpiredToasts(): void;
 };
 
 const POSITIONS: Record<string, { x: number; y: number }> = {
@@ -168,6 +195,10 @@ export const useStore = create<Store>((set, get) => ({
   selectedAgentId: null,
   walkOffsets: {},
   skillTransfers: [],
+  agentTokens: {},
+  listedAgentIds: {},
+  marketListings: [],
+  toasts: [],
   setScreenPositions(screenPositions) {
     set({ screenPositions });
   },
@@ -179,6 +210,15 @@ export const useStore = create<Store>((set, get) => ({
       skillTransfers: state.skillTransfers.filter((transfer) => transfer.expiresAtMs > nowMs),
     }));
   },
+  addToast(message) {
+    const id = `${Date.now()}-${Math.random()}`;
+    set((state) => ({
+      toasts: [...state.toasts, { id, message, expiresAtMs: Date.now() + 3500 }],
+    }));
+  },
+  clearExpiredToasts(nowMs = Date.now()) {
+    set((state) => ({ toasts: state.toasts.filter((t) => t.expiresAtMs > nowMs) }));
+  },
 
   handleEvent(ev: GameEvent) {
     set((state) => {
@@ -189,10 +229,11 @@ export const useStore = create<Store>((set, get) => ({
       const skillTransfers = [...state.skillTransfers];
       let walkOffsets = state.walkOffsets;
       let lionState = state.lionState;
-      // AGENT_HUNGER fires every tick — update state but don't spam the feed
-      const events = ev.kind === "AGENT_HUNGER"
-        ? state.events
-        : [...state.events, ev].slice(-200);
+      let agentTokens = state.agentTokens;
+      let listedAgentIds = state.listedAgentIds;
+      // State-sync messages — update state but don't appear in the feed
+      const silenced = ev.kind === "AGENT_HUNGER" || ev.kind === "MARKETPLACE_LISTINGS";
+      const events = silenced ? state.events : [...state.events, ev].slice(-200);
       let tick = state.tick;
 
       if (ev.kind === "WORLD_TICK") {
@@ -202,14 +243,16 @@ export const useStore = create<Store>((set, get) => ({
 
       if (ev.kind === "AGENT_SPAWNED") {
         const count = Object.keys(agents).length;
-        const traits = (ev.payload as { traits?: string[] })?.traits;
+        const p = ev.payload as { traits?: string[]; name?: string; image?: string };
         agents[ev.actorId] = {
           id: ev.actorId,
+          name: p?.name,
+          image: p?.image,
           alive: true,
           knownSkillIds: [],
           status: "idle",
           position: positionFor(ev.actorId, count),
-          traits,
+          traits: p?.traits,
         };
       }
 
@@ -348,9 +391,25 @@ export const useStore = create<Store>((set, get) => ({
         }
       }
 
+      if (ev.kind === "AGENT_MINTED" || ev.kind === "AGENT_LISTED" || ev.kind === "AGENT_IMPORTED") {
+        const { tokenId } = ev.payload as { tokenId: string };
+        agentTokens = { ...agentTokens, [ev.actorId]: tokenId };
+      }
+      if (ev.kind === "AGENT_LISTED") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: true };
+      }
+      if (ev.kind === "AGENT_DELISTED" || ev.kind === "AGENT_SOLD") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: false };
+      }
+
       lionState = lionStateFromCrises(crises);
 
-      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers };
+      if (ev.kind === "MARKETPLACE_LISTINGS" && ev.payload) {
+        const { listings } = ev.payload as { listings: MarketListing[] };
+        return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, marketListings: listings };
+      }
+
+      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds };
     });
   },
 }));
