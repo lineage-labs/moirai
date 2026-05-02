@@ -32,6 +32,25 @@ describe("computeLionFinalPoint", () => {
     const distanceToBob = Math.hypot(final.x - bob.x, final.z - bob.z);
     expect(distanceToAlice).toBeCloseTo(distanceToBob, 6);
   });
+
+  it("keeps strict screen midpoint for two targets even with blockers", () => {
+    const alice = worldPointFromScreenPosition({ x: 375, y: 440 });
+    const bob = worldPointFromScreenPosition({ x: 555, y: 360 });
+    const midX = (alice.x + bob.x) / 2;
+    const midZ = (alice.z + bob.z) / 2;
+    const eve = worldPointFromScreenPosition({ x: 400, y: 250 });
+
+    const final = computeLionFinalPoint({
+      targets: [
+        { id: "alice", point: alice },
+        { id: "bob", point: bob },
+      ],
+      blockers: [{ id: "eve", point: eve }],
+    });
+
+    expect(final.x).toBeCloseTo(midX, 6);
+    expect(final.z).toBeCloseTo(midZ, 6);
+  });
 });
 
 describe("LION_ENTRY_WORLD_POINT", () => {

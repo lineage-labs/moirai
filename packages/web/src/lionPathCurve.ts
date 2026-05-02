@@ -48,7 +48,7 @@ export function quadraticControl3DXZ(start: THREE.Vector3, end: THREE.Vector3, b
   dir.z /= len;
   const perp = new THREE.Vector3(-dir.z, 0, dir.x);
   const bend = len * bendScale;
-  return new THREE.Vector3(mid.x - perp.x * bend, 0.95, mid.z - perp.z * bend);
+  return new THREE.Vector3(mid.x - perp.x * bend, 3.5, mid.z - perp.z * bend);
 }
 
 /** B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1); tmp must be a scratch vector */

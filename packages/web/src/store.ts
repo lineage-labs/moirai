@@ -58,6 +58,7 @@ export type SkillInfo = {
   selfEvalReceipt?: string;
   selfEvalScore?: number;
   verifiable: boolean;
+  storageSequenceId?: number;
 };
 
 export type CrisisInfo = {
@@ -156,7 +157,7 @@ function gridToPixel(col: number, row: number): { x: number; y: number } {
 }
 
 const POSITIONS: Record<string, { x: number; y: number }> = {
-  alice: gridToPixel(3, 4),
+  alice: gridToPixel(1, 5),
   bob: gridToPixel(5, 3),
   charlie: gridToPixel(6, 1),
   dave: gridToPixel(4, 5),
@@ -291,6 +292,13 @@ export const useStore = create<Store>((set, get) => ({
       if (ev.kind === "AGENT_DIED") {
         const a = agents[ev.actorId];
         if (a) agents[ev.actorId] = { ...a, alive: false, status: "idle" };
+        // Auto-resolve any lion crisis whose targets are all dead (e.g. died from hunger mid-hunt)
+        for (const [cid, crisis] of Object.entries(crises)) {
+          if (crisis.resolved || crisis.type.toLowerCase() !== "lion") continue;
+          if (crisis.targets.every((id) => !agents[id]?.alive)) {
+            crises[cid] = { ...crisis, resolved: true };
+          }
+        }
       }
 
       if (ev.kind === "AGENT_HUNGER" && ev.payload) {
@@ -377,6 +385,7 @@ export const useStore = create<Store>((set, get) => ({
             selfEvalScore: number;
           };
         };
+        const seqId = ev.payload["storageSequenceId"] as number | undefined;
         skills[skill.id] = {
           id: skill.id,
           name: skill.name,
@@ -386,6 +395,7 @@ export const useStore = create<Store>((set, get) => ({
           selfEvalReceipt: skill.provenance.selfEvalReceipt,
           selfEvalScore: skill.provenance.selfEvalScore,
           verifiable: !!ev.receiptHash,
+          storageSequenceId: seqId,
         };
         const a = agents[ev.actorId];
         if (a) {

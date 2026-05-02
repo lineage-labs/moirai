@@ -21,7 +21,7 @@
       "deadlineTicks": 30
     },
     {
-      "tick": 45,
+      "tick": 50,
       "type": "LION",
       "targets": ["dave"],
       "deadlineTicks": 30
