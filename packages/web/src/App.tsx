@@ -8,6 +8,7 @@ import { LionHuntBanner } from "./components/LionHuntBanner";
 import { SelectedAgentPanel } from "./components/SelectedAgentPanel";
 import { TickTimeline } from "./components/TickTimeline";
 import { DeathBanner } from "./components/DeathBanner";
+import { SkillGallery } from "./components/SkillGallery";
 import savannahBg from "./background.png";
 
 const WS_URL = import.meta.env["VITE_WS_URL"] ?? "ws://localhost:8765";
@@ -69,6 +70,7 @@ export default function App() {
       <LionHuntBanner />
       <SelectedAgentPanel />
       <ActiveCrisesPanel />
+      <SkillGallery />
       <TickTimeline />
       <TickCounter tick={tick} />
 
