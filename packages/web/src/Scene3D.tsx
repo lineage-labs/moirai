@@ -102,8 +102,9 @@ function LionActor({ route }: { route: LionRoute }) {
     }
 
     if (lionState.active) {
-      // Project the true curve sample (same x,y,z as the dashed path) so the HUD pin lines up with the line.
-      worldScratch.current.copy(destination);
+      // Anchor the banner to the route START (where lion entered the scene) so it
+      // never overlaps target agents as the lion closes in on them.
+      worldScratch.current.copy(route.start);
       worldScratch.current.project(camera);
       const sx = (worldScratch.current.x * 0.5 + 0.5) * size.width;
       const sy = (-worldScratch.current.y * 0.5 + 0.5) * size.height;
