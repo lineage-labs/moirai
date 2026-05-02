@@ -21,12 +21,26 @@ const statusColor: Record<AgentInfo["status"], string> = {
   crisis: "#ef5a45",
 };
 
+function healthPct(agent: AgentInfo): number {
+  if (!agent.alive) return 0;
+  if (!agent.hunger || agent.hunger.threshold <= 0) return 85;
+  return Math.max(0, Math.min(100, Math.round((1 - agent.hunger.current / agent.hunger.threshold) * 100)));
+}
+
+function healthColor(pct: number): string {
+  if (pct > 55) return "#4cdb6e";
+  if (pct > 25) return "#e5bd5d";
+  return "#e45a45";
+}
+
 export function TinyAgent({ agent, position, walkOffset, targeted, selected }: TinyAgentProps) {
   const selectAgent = useStore((state) => state.selectAgent);
   const personality = getPersonality(agent.id);
   const x = position.x + (walkOffset?.dx ?? 0);
   const y = position.y + (walkOffset?.dy ?? 0);
   const color = agent.alive ? statusColor[agent.status] : "#777067";
+  const hp = healthPct(agent);
+  const hpColor = healthColor(hp);
 
   return (
     <motion.button
@@ -66,6 +80,33 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
             filter: "blur(3px)",
           }}
         />
+        {/* Health bar */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: -6,
+            width: 62,
+            height: 5,
+            transform: "translateX(-50%)",
+            borderRadius: 999,
+            background: "rgba(0,0,0,0.55)",
+            overflow: "hidden",
+            border: "1px solid rgba(0,0,0,0.4)",
+          }}
+        >
+          <motion.div
+            animate={{ width: `${hp}%` }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            style={{
+              height: "100%",
+              background: hpColor,
+              borderRadius: 999,
+              boxShadow: hp <= 25 ? `0 0 6px ${hpColor}` : "none",
+            }}
+          />
+        </div>
+
         <div
           style={{
             position: "absolute",

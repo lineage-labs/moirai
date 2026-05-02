@@ -7,6 +7,7 @@ import { AgentLayer } from "./components/AgentLayer";
 import { LionHuntBanner } from "./components/LionHuntBanner";
 import { SelectedAgentPanel } from "./components/SelectedAgentPanel";
 import { TickTimeline } from "./components/TickTimeline";
+import { DeathBanner } from "./components/DeathBanner";
 import savannahBg from "./background.png";
 
 const WS_URL = import.meta.env["VITE_WS_URL"] ?? "ws://localhost:8765";
@@ -64,6 +65,7 @@ export default function App() {
       </div>
 
       <AgentLayer />
+      <DeathBanner />
       <LionHuntBanner />
       <SelectedAgentPanel />
       <ActiveCrisesPanel />
