@@ -8,6 +8,7 @@ import type { AgentNFTMetadata } from "./types.js";
 const AGENT_NFT_ABI = [
   "function mint(address to, string calldata rootHash) external returns (uint256)",
   "function setMetadataRootHash(uint256 tokenId, string calldata rootHash) external",
+  "function setTokenURI(uint256 tokenId, string calldata uri) external",
   "function metadataRootHash(uint256 tokenId) external view returns (string)",
   "function ownerOf(uint256 tokenId) external view returns (address)",
   "function approve(address to, uint256 tokenId) external",
@@ -154,6 +155,13 @@ export class INFTAdapter {
     const parseId = (log: ethers.Log) => (iface.parseLog(log)!.args[2] as bigint).toString();
     const sentSet = new Set(outgoing.map(parseId));
     return incoming.map(parseId).filter(id => !sentSet.has(id));
+  }
+
+  async setTokenURI(tokenId: string, uri: string): Promise<void> {
+    return this.enqueue(async () => {
+      const tx = await this.contract.getFunction("setTokenURI")(BigInt(tokenId), uri) as ethers.ContractTransactionResponse;
+      await tx.wait();
+    });
   }
 
   private async storeMetadata(metadata: AgentNFTMetadata): Promise<string> {

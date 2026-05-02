@@ -9,12 +9,8 @@ import { loadPersonality } from "@moirai/personality";
 import type { Event, Crisis, Skill } from "@moirai/shared";
 import type { AgentEntry, SkillEntry } from "./types.js";
 import {
-  inftAdapter,
-  marketplaceAdapter,
-  INFT_ENABLED,
-  WORLD_ID,
-  buildMetadata,
-  startContractListeners,
+  inftAdapter, marketplaceAdapter, INFT_ENABLED, WORLD_ID,
+  buildMetadata, buildTokenURI, minifySvg, startContractListeners,
 } from "./inft.js";
 import { startHttpServer } from "./http.js";
 
@@ -370,42 +366,29 @@ function spawnAgent(
     ...(ancestorDeaths.length ? { ancestorDeaths } : {}),
   });
 
-  // iNFT: marketplace import | wallet reuse | fresh mint
+  // iNFT: marketplace import | fresh mint
   if (inftAdapter) {
+    const contractAddress = process.env["INFT_CONTRACT_ADDRESS"];
     if (existingTokenId) {
       // Token from another engine — marketplace import
       entry.tokenId = existingTokenId;
-      console.log(
-        `[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`,
-      );
-      broadcast({
-        kind: "AGENT_IMPORTED",
-        tick,
-        actorId: id,
-        payload: {
-          tokenId: existingTokenId,
-          skills: Object.keys(inheritedSkillRoots),
-        },
-      });
+      console.log(`[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`);
+      broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots), contractAddress } });
     } else {
       // Always mint fresh on engine start
       console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
       readFile(join(AVATARS_DIR, `${personalityId}.svg`))
         .then((bytes) => {
-          entry.image = `data:image/svg+xml;base64,${bytes.toString("base64")}`;
+          entry.image = `data:image/svg+xml;base64,${Buffer.from(minifySvg(bytes.toString("utf8"))).toString("base64")}`;
           return inftAdapter!.mint(id, buildMetadata(entry, skills, tick));
         })
         .then((tokenId) => {
           entry.tokenId = tokenId;
           console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
-          broadcast({
-            kind: "AGENT_MINTED",
-            tick,
-            actorId: id,
-            payload: { tokenId },
-          });
-        })
-        .catch(console.error);
+          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId, contractAddress } });
+          // setTokenURI is best-effort (explorer visibility only); don't block AGENT_MINTED on it
+          inftAdapter!.setTokenURI(tokenId, buildTokenURI(entry, skills)).catch(console.error);
+        }).catch(console.error);
     }
   }
 
@@ -437,8 +420,9 @@ function spawnAgent(
         rootHash: "",
       });
       if (inftAdapter && entry.tokenId) {
-        inftAdapter
-          .updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
+        const tokenId = entry.tokenId;
+        inftAdapter.updateMetadata(tokenId, buildMetadata(entry, skills, tick))
+          .then(() => inftAdapter!.setTokenURI(tokenId, buildTokenURI(entry, skills)))
           .catch(console.error);
       }
     }

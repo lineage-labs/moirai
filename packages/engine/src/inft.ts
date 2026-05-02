@@ -58,6 +58,44 @@ export function buildMetadata(
   };
 }
 
+export function minifySvg(svg: string): string {
+  return svg
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\s*\n\s*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/> </g, "><")
+    .trim();
+}
+
+const EXTERNAL_URL = process.env["MOIRAI_EXTERNAL_URL"] ?? "https://moirai.ai";
+
+export function buildTokenURI(
+  entry: AgentEntry,
+  skills: Map<string, SkillEntry>,
+): string {
+  const personalityId = entry.personalityId ?? entry.id;
+  const personality = loadPersonality(personalityId);
+  const name = personality.name;
+  const learnedSkills = [...entry.knownSkillIds].map((sid) => skills.get(sid)?.skill.name ?? sid);
+  const symbol = `${name.slice(0, 4).toUpperCase()}${String(entry.tokenId ?? "").padStart(3, "0")}`;
+
+  const json = JSON.stringify({
+    name,
+    symbol,
+    description: `${name} is an autonomous AI agent surviving in the Moirai savannah. Powered by 0G Compute sealed inference. Skills: ${learnedSkills.join(", ") || "none yet"}.`,
+    external_url: EXTERNAL_URL,
+    category: "AI Agent",
+    links: { website: EXTERNAL_URL },
+    attributes: [
+      ...(personality.traits ?? []).map((t: string) => ({ trait_type: "Trait", value: t })),
+      ...learnedSkills.map((s) => ({ trait_type: "Skill", value: s })),
+      { trait_type: "World", value: WORLD_ID },
+      { trait_type: "Status", value: entry.alive ? "Alive" : "Dormant" },
+    ],
+  });
+  return `data:application/json;base64,${Buffer.from(json).toString("base64")}`;
+}
+
 export function startContractListeners(ctx: {
   agents: Map<string, AgentEntry>;
   broadcast: (ev: Event) => void;

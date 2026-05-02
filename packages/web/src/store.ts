@@ -131,6 +131,7 @@ type Store = {
   agentTokens: Record<string, string>; // agentId → tokenId
   listedAgentIds: Record<string, boolean>; // agentId → listed?
   marketListings: MarketListing[];
+  nftContractAddress: string | null;
   toasts: { id: string; message: string; expiresAtMs: number }[];
 
   handleEvent(ev: GameEvent): void;
@@ -225,6 +226,7 @@ export const useStore = create<Store>((set, get) => ({
   agentTokens: {},
   listedAgentIds: {},
   marketListings: [],
+  nftContractAddress: null,
   toasts: [],
   setScreenPositions(screenPositions) {
     set({ screenPositions });
@@ -264,6 +266,7 @@ export const useStore = create<Store>((set, get) => ({
       let lionState = state.lionState;
       let agentTokens = state.agentTokens;
       let listedAgentIds = state.listedAgentIds;
+      let nftContractAddress = state.nftContractAddress;
       // State-sync messages — update state but don't appear in the feed
       const silenced = ev.kind === "AGENT_HUNGER" || ev.kind === "MARKETPLACE_LISTINGS";
       const events = silenced ? state.events : [...state.events, ev].slice(-200);
@@ -435,8 +438,9 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       if (ev.kind === "AGENT_MINTED" || ev.kind === "AGENT_LISTED" || ev.kind === "AGENT_IMPORTED") {
-        const { tokenId } = ev.payload as { tokenId: string };
+        const { tokenId, contractAddress } = ev.payload as { tokenId: string; contractAddress?: string };
         agentTokens = { ...agentTokens, [ev.actorId]: tokenId };
+        if (contractAddress && !nftContractAddress) nftContractAddress = contractAddress;
       }
       if (ev.kind === "AGENT_LISTED") {
         listedAgentIds = { ...listedAgentIds, [ev.actorId]: true };
@@ -449,10 +453,10 @@ export const useStore = create<Store>((set, get) => ({
 
       if (ev.kind === "MARKETPLACE_LISTINGS" && ev.payload) {
         const { listings } = ev.payload as { listings: MarketListing[] };
-        return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, marketListings: listings };
+        return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, marketListings: listings, nftContractAddress };
       }
 
-      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds };
+      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, nftContractAddress };
     });
   },
 }));

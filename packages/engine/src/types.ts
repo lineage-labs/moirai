@@ -10,7 +10,7 @@ export type AgentEntry = {
   hunger: number;
   hungerConfig?: { rate: number; threshold: number };
   tokenId?: string;
-  image?: string; // base64 data URL embedded in NFT metadata
+  image?: string; // base64 data URI for UI display and embedded in tokenURI
   listed: boolean;
   sold: boolean;
 };

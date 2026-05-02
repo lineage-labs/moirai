@@ -42,6 +42,7 @@ export function SelectedAgentPanel() {
   const skills = useStore((state) => state.skills);
   const agentTokens = useStore((state) => state.agentTokens);
   const listedAgentIds = useStore((state) => state.listedAgentIds);
+  const nftContractAddress = useStore((state) => state.nftContractAddress);
   const addToast = useStore((state) => state.addToast);
   const events = useStore((state) => state.events);
   const agent = selectedAgentId ? agents[selectedAgentId] : undefined;
@@ -77,6 +78,10 @@ export function SelectedAgentPanel() {
   const marketState = isListed ? "listed" : (marketStates[agentId] ?? "idle");
   const marketError = marketErrors[agentId] ?? "";
   const listPrice = listPrices[agentId] ?? "1";
+  const chainScanBase = import.meta.env["VITE_CHAINSCAN_BASE_URL"] as string | undefined;
+  const chainScanUrl = tokenId && nftContractAddress && chainScanBase
+    ? `${chainScanBase}/nft/${nftContractAddress}/${tokenId}`
+    : null;
 
   function setListPrice(id: string, v: string) {
     setListPrices((prev) => ({ ...prev, [id]: v }));
@@ -138,11 +143,20 @@ export function SelectedAgentPanel() {
             </div>
           )}
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#f4dfb2" }}>{agent.name ?? personality.name}</div>
           <div style={{ color: "#bda16f", fontSize: 10 }}>AGE {18 + (hashAgent(agentId) % 14)}</div>
           <div style={{ color: "#8d7b63", fontSize: 9 }}>ID: {stableId}</div>
         </div>
+        {chainScanUrl && (
+          <a href={chainScanUrl} target="_blank" rel="noreferrer" title="View NFT on 0G Chainscan" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, textDecoration: "none", flexShrink: 0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 9l10 13L22 9 12 2z" fill="#7fb3d3" opacity="0.85" />
+              <path d="M2 9h20M8 2l-6 7M16 2l6 7M12 22L2 9M12 22L22 9" stroke="#7fb3d3" strokeWidth="1.2" strokeLinejoin="round" />
+            </svg>
+            <span style={{ color: "#7fb3d3", fontSize: 7, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase" }}>NFT</span>
+          </a>
+        )}
       </div>
       <Section title="Status">
         <div style={{ display: "flex", alignItems: "center", gap: 6, color: targeted ? "#ff7b62" : "#9bd76e", fontSize: 12, fontWeight: 700 }}>
