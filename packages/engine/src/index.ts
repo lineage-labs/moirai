@@ -44,10 +44,6 @@ const skills = new Map<string, SkillEntry>();
 let tick = 0;
 let paused = false;
 
-// agentId → tokenId for tokens already in the engine wallet (populated at boot)
-const walletTokens = new Map<string, string>();
-// agentId → image data URI from NFT metadata (populated alongside walletTokens at boot)
-const walletImages = new Map<string, string>();
 
 function makeSkillStub(s: { id: string; name: string }): Skill {
   return {
@@ -236,30 +232,18 @@ function spawnAgent(
       console.log(`[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`);
       broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots) } });
     } else {
-      const cachedTokenId = walletTokens.get(id);
-      if (cachedTokenId) {
-        // Own token from a previous session — reuse without minting
-        entry.tokenId = cachedTokenId;
-        // Restore image from NFT metadata so subsequent updateMetadata calls don't wipe it
-        const nftImage = walletImages.get(id);
-        if (nftImage) entry.image = nftImage;
-        console.log(`[engine] [iNFT] ${id}: reusing wallet tokenId=${cachedTokenId}`);
-        broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId: cachedTokenId } });
-      } else {
-        // First time — read avatar, then mint
-        console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
-        readFile(join(AVATARS_DIR, `${personalityId}.svg`))
-          .then((bytes) => {
-            entry.image = `data:image/svg+xml;base64,${bytes.toString("base64")}`;
-            return inftAdapter!.mint(id, buildMetadata(entry, skills, tick));
-          })
-          .then((tokenId) => {
-            entry.tokenId = tokenId;
-            walletTokens.set(id, tokenId);
-            console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
-            broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId } });
-          }).catch(console.error);
-      }
+      // Always mint fresh on engine start
+      console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
+      readFile(join(AVATARS_DIR, `${personalityId}.svg`))
+        .then((bytes) => {
+          entry.image = `data:image/svg+xml;base64,${bytes.toString("base64")}`;
+          return inftAdapter!.mint(id, buildMetadata(entry, skills, tick));
+        })
+        .then((tokenId) => {
+          entry.tokenId = tokenId;
+          console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
+          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId } });
+        }).catch(console.error);
     }
   }
 
@@ -335,7 +319,7 @@ function spawnAgent(
 
   const spawnedName = nftIdentity?.name ?? personality.name;
   const spawnedTraits = nftIdentity?.traits ?? personality.traits ?? [];
-  const spawnedImage = nftIdentity?.image;
+  const spawnedImage = nftIdentity?.image ?? entry.image;
   broadcast({ kind: "AGENT_SPAWNED", tick, actorId: id, payload: { personalityId, name: spawnedName, traits: spawnedTraits, ...(spawnedImage ? { image: spawnedImage } : {}) } });
 }
 
@@ -499,30 +483,12 @@ async function main(): Promise<void> {
     spawnFromNFT,
   });
 
-  // Scan wallet for existing tokens — populate walletTokens + walletSkills.
-  // Agents are still spawned in the normal world order below; spawnAgent picks
-  // up wallet data automatically instead of minting fresh.
   if (INFT_ENABLED && inftAdapter) {
-    console.log("[engine] scanning wallet for existing agent NFTs…");
-    try {
-      const ownedTokenIds = await inftAdapter.getOwnedTokenIds();
-      for (const tokenId of ownedTokenIds) {
-        try {
-          const metadata = await inftAdapter.readMetadata(tokenId);
-          walletTokens.set(metadata.agentId, tokenId);
-          if (metadata.image) walletImages.set(metadata.agentId, metadata.image);
-        } catch (err) {
-          console.error(`[engine] could not read metadata for tokenId=${tokenId}:`, err);
-        }
-      }
-      if (walletTokens.size > 0)
-        console.log(`[engine] ${walletTokens.size} token(s) cached — agents will reuse existing NFTs`);
-      if (marketplaceAdapter && process.env["MARKETPLACE_CONTRACT_ADDRESS"]) {
-        await inftAdapter.approveMarketplaceForAll(process.env["MARKETPLACE_CONTRACT_ADDRESS"]).catch(console.error);
-      }
-    } catch (err) {
-      console.error("[engine] wallet scan failed, proceeding with fresh mints:", err);
+    if (marketplaceAdapter && process.env["MARKETPLACE_CONTRACT_ADDRESS"]) {
+      await inftAdapter.approveMarketplaceForAll(process.env["MARKETPLACE_CONTRACT_ADDRESS"]).catch(console.error);
     }
+    // Delist any stale listings left over from a previous engine session
+    await cleanOwnListings().catch(console.error);
   }
 
   const initialAgents = ["alice", "bob", "charlie"];

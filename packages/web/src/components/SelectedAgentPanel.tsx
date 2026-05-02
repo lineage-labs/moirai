@@ -42,17 +42,14 @@ export function SelectedAgentPanel() {
   const skills = useStore((state) => state.skills);
   const agentTokens = useStore((state) => state.agentTokens);
   const listedAgentIds = useStore((state) => state.listedAgentIds);
-  const agent = selectedAgentId ? agents[selectedAgentId] : undefined;
-
   const addToast = useStore((state) => state.addToast);
   const events = useStore((state) => state.events);
+  const agent = selectedAgentId ? agents[selectedAgentId] : undefined;
 
-  // Per-agent market state so switching agents never clobbers an in-flight operation
   const [marketStates, setMarketStates] = useState<Record<string, "idle" | "pending" | "listed" | "error">>({});
   const [marketErrors, setMarketErrors] = useState<Record<string, string>>({});
   const [listPrices, setListPrices] = useState<Record<string, string>>({});
 
-  // React to WS events for this agent to transition pending state
   const lastMarketEvent = selectedAgentId
     ? events.filter((e) => (e.kind === "AGENT_LISTED" || e.kind === "AGENT_DELISTED" || e.kind === "MARKETPLACE_ERROR") && e.actorId === selectedAgentId).at(-1)
     : undefined;
@@ -100,8 +97,6 @@ export function SelectedAgentPanel() {
   const personality = getPersonality(agentId);
   const inventory = getAgentInventory(agentId);
   const targeted = lionState.active && lionState.targets.includes(agentId);
-  const energy = energyRatio(agent);
-  const hunger = 1 - energy;
   const health = agent.alive ? (targeted ? 0.72 : 0.88) : 0;
   const stableId = `AG-${String(hashAgent(agentId) * 17).padStart(4, "0").slice(0, 4)}`;
 
@@ -136,7 +131,7 @@ export function SelectedAgentPanel() {
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
-          <img src={agent.image ?? getAgentAvatar(agentId)} alt={`${personality.name} avatar`} width={58} height={58} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
+          <img src={agent.image ?? getAgentAvatar(agentId)} alt={`${personality.name} avatar`} width={80} height={80} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
           {marketState === "listed" && (
             <div style={{ position: "absolute", bottom: -2, right: -4, background: "#8fd16d", color: "#1a2e12", fontSize: 7, fontWeight: 900, padding: "2px 5px", borderRadius: 4, letterSpacing: 0.4, textTransform: "uppercase", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }}>
               FOR SALE
@@ -233,13 +228,8 @@ export function SelectedAgentPanel() {
                 <span style={{ color: "#8fd16d", fontSize: 10 }}>✓</span>
                 <span style={{ color: "#a9c882", fontSize: 10, fontWeight: 700 }}>Listed for sale</span>
               </div>
-              <button
-                type="button"
-                onClick={handleDelist}
-                disabled={marketState !== "listed"}
-                style={btnStyle("#e45a45", "#ff8c74")}
-              >
-                Delist Agent
+              <button type="button" onClick={handleDelist} disabled={marketStates[agentId] === "pending"} style={btnStyle("#e45a45", "#ff8c74")}>
+                {marketStates[agentId] === "pending" ? "Delisting…" : "Delist Agent"}
               </button>
             </div>
           ) : (
@@ -252,12 +242,7 @@ export function SelectedAgentPanel() {
                   style={{ flex: 1, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(231,190,110,0.18)", borderRadius: 5, color: "#f0dfbd", fontSize: 10, padding: "3px 6px", fontFamily: F }}
                 />
               </div>
-              <button
-                type="button"
-                onClick={handleList}
-                disabled={marketState === "pending"}
-                style={btnStyle("#8fd16d", "#a9c882")}
-              >
+              <button type="button" onClick={handleList} disabled={marketState === "pending"} style={btnStyle("#8fd16d", "#a9c882")}>
                 {marketState === "pending" ? "Listing…" : "List on Marketplace"}
               </button>
             </div>

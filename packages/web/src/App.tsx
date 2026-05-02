@@ -122,8 +122,8 @@ export default function App() {
         aria-label="Toggle marketplace"
         style={{
           position: "absolute",
-          bottom: 26,
-          left: "calc(max(17px, (100vw - 960px) / 8))",
+          bottom: 116,
+          left: 17,
           zIndex: 45,
           width: 56,
           height: 56,
