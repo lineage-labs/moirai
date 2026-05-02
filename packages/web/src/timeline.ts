@@ -4,6 +4,7 @@ export type TickHeadline = {
   kind: GameEvent["kind"] | "IDLE";
   title: string;
   actorId: string;
+  tick: number;
 };
 
 const PRIORITY: Partial<Record<GameEvent["kind"], number>> = {
@@ -54,7 +55,7 @@ export function pickTickHeadline(events: GameEvent[], tick: number): TickHeadlin
   const headline = tickHeadlines(events, tick)[0];
 
   if (!headline) {
-    return { kind: "IDLE", title: "World breathing", actorId: "world" };
+    return { kind: "IDLE", title: "World breathing", actorId: "world", tick: 0 };
   }
 
   return headline;
@@ -69,6 +70,7 @@ export function tickHeadlines(events: GameEvent[], tick: number, limit = 3): Tic
       kind: event.kind,
       title: titleForEvent(event),
       actorId: event.actorId,
+      tick: event.tick,
     }));
 }
 
@@ -80,5 +82,6 @@ export function recentEventHeadlines(events: GameEvent[], limit = 8): TickHeadli
       kind: event.kind,
       title: titleForEvent(event),
       actorId: event.actorId,
+      tick: event.tick,
     }));
 }

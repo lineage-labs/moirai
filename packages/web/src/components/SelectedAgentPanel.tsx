@@ -10,10 +10,6 @@ function hashAgent(id: string): number {
   return [...id].reduce((acc, char) => acc + char.charCodeAt(0), 0);
 }
 
-function energyRatio(agent: AgentInfo): number {
-  if (!agent.hunger || agent.hunger.threshold <= 0) return 0.78;
-  return Math.max(0, Math.min(1, 1 - agent.hunger.current / agent.hunger.threshold));
-}
 
 function statusText(agent: AgentInfo, targeted: boolean): string {
   if (!agent.alive) return "Down";
@@ -51,8 +47,6 @@ export function SelectedAgentPanel() {
   const personality = getPersonality(agent.id);
   const inventory = getAgentInventory(agent.id);
   const targeted = lionState.active && lionState.targets.includes(agent.id);
-  const energy = energyRatio(agent);
-  const hunger = 1 - energy;
   const health = agent.alive ? (targeted ? 0.72 : 0.88) : 0;
   const stableId = `AG-${String(hashAgent(agent.id) * 17).padStart(4, "0").slice(0, 4)}`;
 
@@ -62,7 +56,7 @@ export function SelectedAgentPanel() {
         position: "absolute",
         top: 82,
         left: 14,
-        width: 214,
+        width: 240,
         zIndex: 45,
         borderRadius: 12,
         padding: 14,
@@ -86,7 +80,7 @@ export function SelectedAgentPanel() {
         Selected Agent
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
-        <img src={getAgentAvatar(agent.id)} alt={`${personality.name} avatar`} width={68} height={68} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
+        <img src={getAgentAvatar(agent.id)} alt={`${personality.name} avatar`} width={80} height={80} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#f4dfb2" }}>{personality.name}</div>
           <div style={{ color: "#bda16f", fontSize: 10 }}>AGE {18 + (hashAgent(agent.id) % 14)}</div>
@@ -94,16 +88,37 @@ export function SelectedAgentPanel() {
         </div>
       </div>
       <Section title="Status">
-        <div style={{ color: targeted ? "#ff7b62" : "#9bd76e", fontSize: 12, fontWeight: 700 }}>{statusText(agent, targeted)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, color: targeted ? "#ff7b62" : "#9bd76e", fontSize: 12, fontWeight: 700 }}>
+          <span>{targeted ? "🏃" : agent.status === "reasoning" ? "🤔" : "🧘"}</span>
+          <span>{statusText(agent, targeted)}</span>
+        </div>
       </Section>
-      <Meter label="Health" value={health} color={health > 0.4 ? "#53c66d" : "#e45a45"} />
-      <Meter label="Hunger" value={hunger} color={hunger > 0.7 ? "#e45a45" : "#d8a64a"} />
-      <Meter label="Energy" value={energy} color={energy > 0.35 ? "#52bfe8" : "#e5bd5d"} />
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", color: "#c9b483", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>
+          <span>❤️ Health</span>
+          <span>{Math.round(health * 100)}/100</span>
+        </div>
+        <div style={{ height: 7, borderRadius: 999, background: "rgba(0,0,0,0.48)", overflow: "hidden", border: "1px solid rgba(255,220,150,0.10)" }}>
+          <div style={{ width: `${Math.round(health * 100)}%`, height: "100%", background: health > 0.4 ? "#53c66d" : "#e45a45", borderRadius: 999, boxShadow: `0 0 10px ${health > 0.4 ? "#53c66d" : "#e45a45"}` }} />
+        </div>
+      </div>
       <Section title="Mood">
-        <span style={{ color: targeted ? "#ffb36e" : "#9bd76e", fontSize: 12 }}>{targeted ? "Alert" : "Good"}</span>
+        <span style={{ color: targeted ? "#ffb36e" : "#9bd76e", fontSize: 12 }}>
+          {targeted ? "😰 Alert" : "😊 Good"}
+        </span>
       </Section>
       <Section title="Goal">
-        <div style={{ color: "#d9c59a", fontSize: 11, lineHeight: 1.35 }}>{targeted ? "Escape the lion and survive the crisis" : "Explore the savannah and gather useful skills"}</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <span style={{ fontSize: 14 }}>{targeted ? "🏃" : "🎯"}</span>
+          <div>
+            <div style={{ color: "#d9c59a", fontSize: 11, fontWeight: 700, lineHeight: 1.3 }}>
+              {targeted ? "Reach Eve (Ally)" : "Explore the savannah"}
+            </div>
+            <div style={{ color: "#9a8870", fontSize: 10, marginTop: 2, lineHeight: 1.3 }}>
+              {targeted ? "Get help to escape the lion" : "Gather useful skills"}
+            </div>
+          </div>
+        </div>
       </Section>
       <Section title="Traits">
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -112,12 +127,25 @@ export function SelectedAgentPanel() {
       </Section>
       <Section title="Skills">
         <div style={{ display: "grid", gap: 6 }}>
-          {agent.knownSkillIds.length === 0 ? <span style={{ color: "#8d7b63", fontSize: 11 }}>No learned skills yet</span> : agent.knownSkillIds.map((skillId, index) => (
-            <div key={skillId} style={{ display: "flex", justifyContent: "space-between", color: "#d9c59a", fontSize: 11 }}>
-              <span>{skills[skillId]?.name ?? skillId.slice(0, 12)}</span>
-              <span>Lv {index + 1}</span>
-            </div>
-          ))}
+          {agent.knownSkillIds.length === 0
+            ? <span style={{ color: "#8d7b63", fontSize: 11 }}>No learned skills yet</span>
+            : agent.knownSkillIds.map((skillId, index) => (
+              <div key={skillId}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#d9c59a", fontSize: 11, marginBottom: 3 }}>
+                  <span>{skills[skillId]?.name ?? skillId.slice(0, 12)}</span>
+                  <span style={{ color: "#bda16f" }}>Lv {index + 2}</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,0.40)", overflow: "hidden" }}>
+                  <div style={{
+                    width: `${Math.min(100, 30 + (index + 1) * 22)}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #c8a83a, #e8d06a)",
+                    borderRadius: 999,
+                  }} />
+                </div>
+              </div>
+            ))
+          }
         </div>
       </Section>
       <Section title="Inventory">

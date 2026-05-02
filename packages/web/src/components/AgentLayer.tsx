@@ -1,7 +1,7 @@
 import React from "react";
 import { resolveTinyAgentLayout } from "../layoutPhysics";
 import { useStore } from "../store";
-import { LionHuntPathLayer } from "./LionHuntPathLayer";
+import { LionPathOverlay } from "./LionPathOverlay";
 import { SkillTransferLayer } from "./SkillTransferLayer";
 import { TinyAgent } from "./TinyAgent";
 
@@ -30,8 +30,8 @@ export function AgentLayer() {
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 22 }}>
+      <LionPathOverlay />
       <SkillTransferLayer />
-      <LionHuntPathLayer positions={layout} />
       {agentList.map((agent) => (
         <TinyAgent
           key={agent.id}

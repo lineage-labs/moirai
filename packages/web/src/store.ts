@@ -100,6 +100,7 @@ type Store = {
   edges: EdgeInfo[];
   tick: number;
   screenPositions: Record<string, ScreenPosition>;
+  lionPathScreenPoints: ScreenPosition[];
   lionState: LionState;
   lionHud: LionHudInfo | null;
   selectedAgentId: string | null;
@@ -108,6 +109,7 @@ type Store = {
 
   handleEvent(ev: GameEvent): void;
   setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
+  setLionPathScreenPoints(pts: ScreenPosition[]): void;
   setLionHud(info: LionHudInfo | null): void;
   selectAgent(agentId: string | null): void;
   clearExpiredSkillTransfers(nowMs?: number): void;
@@ -186,6 +188,7 @@ export const useStore = create<Store>((set, get) => ({
   edges: [],
   tick: 0,
   screenPositions: {},
+  lionPathScreenPoints: [],
   lionState: { active: false, targets: [] },
   lionHud: null,
   selectedAgentId: null,
@@ -193,6 +196,9 @@ export const useStore = create<Store>((set, get) => ({
   skillTransfers: [],
   setScreenPositions(screenPositions) {
     set({ screenPositions });
+  },
+  setLionPathScreenPoints(pts) {
+    set({ lionPathScreenPoints: pts });
   },
   setLionHud(info) {
     set({ lionHud: info });
