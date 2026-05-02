@@ -6,8 +6,13 @@ export type AgentNFTMetadata = {
   worldId: string;
 
   name: string;
+  description?: string;
+  symbol?: string;
+  external_url?: string;
+  category?: string;
   traits: string[];
   image: string; // data:image/svg+xml;base64,... embedded at mint time
+  attributes?: Array<{ trait_type: string; value: string }>;
 
   tokenId: string;
   ancestorTokenIds: string[];

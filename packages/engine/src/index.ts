@@ -10,7 +10,7 @@ import type { Event, Crisis, Skill } from "@moirai/shared";
 import type { AgentEntry, SkillEntry } from "./types.js";
 import {
   inftAdapter, marketplaceAdapter, INFT_ENABLED, WORLD_ID,
-  buildMetadata, buildTokenURI, minifySvg, startContractListeners,
+  buildMetadata, minifySvg, startContractListeners,
 } from "./inft.js";
 import { startHttpServer } from "./http.js";
 
@@ -369,11 +369,12 @@ function spawnAgent(
   // iNFT: marketplace import | fresh mint
   if (inftAdapter) {
     const contractAddress = process.env["INFT_CONTRACT_ADDRESS"];
+    const contractAddressField = contractAddress ? { contractAddress } : {};
     if (existingTokenId) {
       // Token from another engine — marketplace import
       entry.tokenId = existingTokenId;
       console.log(`[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`);
-      broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots), contractAddress } });
+      broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots), ...contractAddressField } });
     } else {
       // Always mint fresh on engine start
       console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
@@ -385,9 +386,7 @@ function spawnAgent(
         .then((tokenId) => {
           entry.tokenId = tokenId;
           console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
-          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId, contractAddress } });
-          // setTokenURI is best-effort (explorer visibility only); don't block AGENT_MINTED on it
-          inftAdapter!.setTokenURI(tokenId, buildTokenURI(entry, skills)).catch(console.error);
+          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId, ...contractAddressField } });
         }).catch(console.error);
     }
   }
@@ -422,7 +421,6 @@ function spawnAgent(
       if (inftAdapter && entry.tokenId) {
         const tokenId = entry.tokenId;
         inftAdapter.updateMetadata(tokenId, buildMetadata(entry, skills, tick))
-          .then(() => inftAdapter!.setTokenURI(tokenId, buildTokenURI(entry, skills)))
           .catch(console.error);
       }
     }
@@ -590,6 +588,10 @@ function checkCrisisResolution(agentId: string): void {
       const set = perCrisisResolvedAgents.get(crisisId) ?? new Set<string>();
       set.add(agentId);
       perCrisisResolvedAgents.set(crisisId, set);
+      if (crisis.type.toUpperCase() === "HUNGER") {
+        const a = agents.get(agentId);
+        if (a) a.hunger = 0;
+      }
     }
 
     const allResolved = crisis.targets.every((targetId) => {
@@ -767,54 +769,6 @@ function doTick(): void {
     sendToAgent(agent, { kind: "TICK", tick, crises });
   }
 }
-
-// --- Demo controller HTTP endpoint ---
-createServer((req, res) => {
-  if (req.method !== "POST" || req.url !== "/crisis") {
-    res.writeHead(404).end();
-    return;
-  }
-  const chunks: Buffer[] = [];
-  req.on("data", (c: Buffer) => chunks.push(c));
-  req.on("end", () => {
-    const body = JSON.parse(Buffer.concat(chunks).toString()) as {
-      type: string;
-      targets?: string[];
-    };
-    const crisisId = `${body.type}-manual-${tick}`;
-    const targets = (body.targets ?? [...agents.keys()]).filter(
-      (id) => agents.get(id)?.alive,
-    );
-    const crisis: Crisis = {
-      id: crisisId,
-      type: body.type.toUpperCase(),
-      description:
-        body.type.toUpperCase() === "LION"
-          ? "A lion is nearby and hunting you. You must scare it away or defend yourself to survive."
-          : body.type.toUpperCase() === "HUNGER"
-            ? "You are starving. You must find, gather, or produce food using items around you to survive."
-            : `A ${body.type.toLowerCase()} crisis is threatening your survival.`,
-      startedAtTick: tick,
-      deadlineTicks: 25,
-      targets,
-    };
-    activeCrises.set(crisisId, crisis);
-    broadcast({
-      kind: "CRISIS_STARTED",
-      tick,
-      actorId: "engine",
-      payload: crisis,
-    });
-    for (const targetId of targets) {
-      const agent = agents.get(targetId);
-      if (agent?.alive)
-        sendToAgent(agent, { kind: "TICK", tick, crises: [crisis] });
-    }
-    res
-      .writeHead(200, { "Content-Type": "application/json" })
-      .end(JSON.stringify({ ok: true, crisisId }));
-  });
-}).listen(HTTP_PORT, () => console.log(`[engine] HTTP on :${HTTP_PORT}`));
 
 // --- Boot ---
 async function main(): Promise<void> {

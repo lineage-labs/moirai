@@ -38,22 +38,33 @@ export function buildMetadata(
 ): AgentNFTMetadata {
   const personalityId = entry.personalityId ?? entry.id;
   const personality = loadPersonality(personalityId);
+  const learnedSkills = [...entry.knownSkillIds].flatMap((skillId) => {
+    const s = skills.get(skillId);
+    if (!s?.rootHash) return [];
+    return [{ id: skillId, name: s.skill.name, rootHash: s.rootHash }];
+  });
   return {
     schemaVersion: 1,
     agentId: entry.id,
     personalityId,
     worldId: WORLD_ID,
     name: personality.name,
+    symbol: `${personality.name.slice(0, 4).toUpperCase()}${String(entry.tokenId ?? "").padStart(3, "0")}`,
+    description: `${personality.name} is an autonomous AI agent surviving in the Moirai savannah. Powered by 0G Compute sealed inference. Skills: ${learnedSkills.map(s => s.name).join(", ") || "none yet"}.`,
+    external_url: EXTERNAL_URL,
+    category: "AI Agent",
     traits: personality.traits ?? [],
     image: entry.image ?? "",
+    attributes: [
+      ...(personality.traits ?? []).map((t: string) => ({ trait_type: "Trait", value: t })),
+      ...learnedSkills.map(s => ({ trait_type: "Skill", value: s.name })),
+      { trait_type: "World", value: WORLD_ID },
+      { trait_type: "Status", value: entry.alive ? "Alive" : "Dormant" },
+    ],
     tokenId: entry.tokenId ?? "",
     ancestorTokenIds: [],
     spawnTick: tick,
-    skills: [...entry.knownSkillIds].flatMap((skillId) => {
-      const s = skills.get(skillId);
-      if (!s?.rootHash) return [];
-      return [{ id: skillId, name: s.skill.name, rootHash: s.rootHash }];
-    }),
+    skills: learnedSkills,
     status: "alive",
   };
 }

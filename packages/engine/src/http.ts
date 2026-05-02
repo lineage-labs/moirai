@@ -36,10 +36,16 @@ export function startHttpServer(ctx: HttpContext): void {
       const tick = getTick();
       const crisisId = `${body.type}-manual-${tick}`;
       const targets = (body.targets ?? [...agents.keys()]).filter(id => agents.get(id)?.alive);
+      const upper = body.type.toUpperCase();
       const crisis: Crisis = {
         id: crisisId,
-        type: body.type.toUpperCase(),
-        description: `Manual ${body.type.toLowerCase()} crisis!`,
+        type: upper,
+        description:
+          upper === "LION"
+            ? "A lion is nearby and hunting you. You must scare it away or defend yourself to survive."
+            : upper === "HUNGER"
+              ? "You are starving. You must find, gather, or produce food using items around you to survive."
+              : `A ${body.type.toLowerCase()} crisis is threatening your survival.`,
         startedAtTick: tick,
         deadlineTicks: 25,
         targets,

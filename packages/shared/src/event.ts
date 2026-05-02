@@ -27,11 +27,11 @@ export type SkillLearnedEvent = EventBase & { kind: "SKILL_LEARNED"; payload: { 
 export type SkillInheritedEvent = EventBase & { kind: "SKILL_INHERITED"; payload: { skillId: string } };
 export type SkillDeclinedEvent = EventBase & { kind: "SKILL_DECLINED"; payload: { from: AgentId; skillId: string; skillName: string; skillEffect: string; score: number; reason?: string } };
 export type AgentHungerEvent = EventBase & { kind: "AGENT_HUNGER"; payload: { hunger: number; threshold: number } };
-export type AgentMintedEvent = EventBase & { kind: "AGENT_MINTED"; payload: { tokenId: string } };
+export type AgentMintedEvent = EventBase & { kind: "AGENT_MINTED"; payload: { tokenId: string; contractAddress?: string } };
 export type AgentListedEvent = EventBase & { kind: "AGENT_LISTED"; payload: { tokenId: string; salePriceWei: string } };
 export type AgentDelistedEvent = EventBase & { kind: "AGENT_DELISTED"; payload: { tokenId: string; reason: "sold" | "reasoning" | "manual" } };
 export type AgentSoldEvent = EventBase & { kind: "AGENT_SOLD"; payload: { tokenId: string } };
-export type AgentImportedEvent = EventBase & { kind: "AGENT_IMPORTED"; payload: { tokenId: string; skills: string[] } };
+export type AgentImportedEvent = EventBase & { kind: "AGENT_IMPORTED"; payload: { tokenId: string; skills: string[]; contractAddress?: string } };
 
 export type Event =
   | WorldTickEvent

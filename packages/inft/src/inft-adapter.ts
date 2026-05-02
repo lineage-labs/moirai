@@ -166,13 +166,30 @@ export class INFTAdapter {
 
   private async storeMetadata(metadata: AgentNFTMetadata): Promise<string> {
     const bytes = new TextEncoder().encode(JSON.stringify(metadata));
-    const data = new MemData(bytes);
-    const [result, err] = await this.indexer.upload(data, this.cfg.rpcUrl, this.wallet as never);
-    if (err) throw err;
-    if (!result || !("rootHash" in result) || !result.rootHash) {
-      throw new Error("[INFTAdapter] 0G Storage upload returned no rootHash");
+    // Retry on REPLACEMENT_UNDERPRICED — the 0G Storage SDK fetches the nonce from the node
+    // before submitting the storage-fee tx. If a previous tx from the same wallet hasn't fully
+    // propagated yet, the SDK picks the same nonce and gets rejected. A short wait lets the node
+    // catch up so the retry sees the correct next nonce.
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 3000 * attempt));
+      const data = new MemData(bytes);
+      const [result, err] = await this.indexer.upload(data, this.cfg.rpcUrl, this.wallet as never);
+      if (!err) {
+        if (!result || !("rootHash" in result) || !result.rootHash) {
+          throw new Error("[INFTAdapter] 0G Storage upload returned no rootHash");
+        }
+        return result.rootHash as string;
+      }
+      const msg = String(err);
+      if (msg.includes("REPLACEMENT_UNDERPRICED") || msg.includes("replacement fee too low")) {
+        console.warn(`[INFTAdapter] storeMetadata attempt ${attempt + 1} REPLACEMENT_UNDERPRICED — retrying…`);
+        lastErr = err;
+        continue;
+      }
+      throw err;
     }
-    return result.rootHash as string;
+    throw lastErr;
   }
 
   private async downloadMetadata(rootHash: string): Promise<AgentNFTMetadata> {
