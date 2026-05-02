@@ -37,8 +37,8 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
       style={{
         position: "absolute",
         transform: "translate(-50%, -72%)",
-        width: 58,
-        height: 78,
+        width: 66,
+        height: 88,
         border: "none",
         padding: 0,
         background: "transparent",
@@ -58,8 +58,8 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
             position: "absolute",
             left: "50%",
             bottom: 6,
-            width: 38,
-            height: 12,
+            width: 44,
+            height: 13,
             transform: "translateX(-50%)",
             borderRadius: "50%",
             background: "rgba(0,0,0,0.35)",
@@ -70,9 +70,9 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
           style={{
             position: "absolute",
             left: "50%",
-            top: 7,
-            width: 40,
-            height: 40,
+            top: 6,
+            width: 48,
+            height: 48,
             transform: "translateX(-50%)",
             borderRadius: "50%",
             border: selected ? "3px solid #f6cf74" : `2px solid ${color}`,
@@ -84,15 +84,15 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
             zIndex: 2,
           }}
         >
-          <img src={getAgentAvatar(agent.id)} alt="" width={40} height={40} style={{ display: "block" }} />
+          <img src={getAgentAvatar(agent.id)} alt="" width={48} height={48} style={{ display: "block" }} />
         </div>
         <div
           style={{
             position: "absolute",
             left: "50%",
-            top: 46,
-            width: 16,
-            height: 18,
+            top: 54,
+            width: 18,
+            height: 20,
             transform: "translateX(-50%)",
             borderRadius: "8px 8px 4px 4px",
             background: `linear-gradient(180deg, ${color}, rgba(38,29,17,0.92))`,
@@ -104,11 +104,11 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
           style={{
             position: "absolute",
             left: "50%",
-            top: 64,
+            top: 74,
             transform: "translateX(-50%)",
             color: "#f1d99e",
             fontFamily: F_LABEL,
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: 700,
             lineHeight: 1,
             textShadow: "0 2px 4px rgba(0,0,0,0.9)",
@@ -118,7 +118,7 @@ export function TinyAgent({ agent, position, walkOffset, targeted, selected }: T
           {personality.name}
         </div>
         {targeted && (
-          <div style={{ position: "absolute", left: 0, right: 0, top: 32, height: 40, zIndex: 1 }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: 38, height: 46, zIndex: 1 }}>
             <LionTargetRing />
           </div>
         )}

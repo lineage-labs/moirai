@@ -86,7 +86,7 @@ export function SelectedAgentPanel() {
         Selected Agent
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
-        <img src={getAgentAvatar(agent.id)} alt={`${personality.name} avatar`} width={58} height={58} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
+        <img src={getAgentAvatar(agent.id)} alt={`${personality.name} avatar`} width={68} height={68} style={{ borderRadius: "50%", border: "2px solid #d2a85f", background: "#261a10" }} />
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#f4dfb2" }}>{personality.name}</div>
           <div style={{ color: "#bda16f", fontSize: 10 }}>AGE {18 + (hashAgent(agent.id) % 14)}</div>

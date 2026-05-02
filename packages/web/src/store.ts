@@ -58,6 +58,7 @@ export type CrisisInfo = {
   resolved: boolean;
   startedAtTick: number;
   deadlineTicks: number;
+  startedAtMs: number;
 };
 
 export type EdgeInfo = {
@@ -74,6 +75,13 @@ export type LionState = {
   active: boolean;
   crisisId?: string;
   targets: string[];
+};
+
+/** Screen-space lion marker + banner (updated from Scene3D while hunting) */
+export type LionHudInfo = {
+  x: number;
+  y: number;
+  subtitle: string;
 };
 
 export type SkillTransferInfo = {
@@ -93,31 +101,45 @@ type Store = {
   tick: number;
   screenPositions: Record<string, ScreenPosition>;
   lionState: LionState;
+  lionHud: LionHudInfo | null;
   selectedAgentId: string | null;
   walkOffsets: Record<string, WalkOffset>;
   skillTransfers: SkillTransferInfo[];
 
   handleEvent(ev: GameEvent): void;
   setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
+  setLionHud(info: LionHudInfo | null): void;
   selectAgent(agentId: string | null): void;
   clearExpiredSkillTransfers(nowMs?: number): void;
 };
 
+const GRID = { cols: 10, rows: 7 };
+const GRID_SIZE = { width: 900, height: 560 };
+const GRID_OFFSET = { x: 60, y: 80 };
+
+function gridToPixel(col: number, row: number): { x: number; y: number } {
+  const cellW = GRID_SIZE.width / GRID.cols;
+  const cellH = GRID_SIZE.height / GRID.rows;
+  return {
+    x: GRID_OFFSET.x + (col + 0.5) * cellW,
+    y: GRID_OFFSET.y + (row + 0.5) * cellH,
+  };
+}
+
 const POSITIONS: Record<string, { x: number; y: number }> = {
-  alice: { x: 330, y: 300 },
-  bob: { x: 395, y: 318 },
-  charlie: { x: 545, y: 250 },
-  dave: { x: 420, y: 500 },
-  eve: { x: 610, y: 390 },
-  frank: { x: 665, y: 520 },
-  grace: { x: 260, y: 455 },
-  henry: { x: 705, y: 235 },
+  alice: gridToPixel(3, 4),
+  bob: gridToPixel(5, 3),
+  charlie: gridToPixel(6, 1),
+  dave: gridToPixel(4, 5),
+  eve: gridToPixel(7, 3),
+  frank: gridToPixel(7, 5),
+  grace: gridToPixel(2, 4),
+  henry: gridToPixel(8, 1),
 };
 
 function positionFor(id: string, agentCount: number): { x: number; y: number } {
   if (POSITIONS[id]) return POSITIONS[id]!;
-  const angle = (agentCount * 2 * Math.PI) / 5;
-  return { x: 460 + 250 * Math.cos(angle), y: 340 + 190 * Math.sin(angle) };
+  return gridToPixel(agentCount % GRID.cols, Math.floor(agentCount / GRID.cols) % GRID.rows);
 }
 
 function lionStateFromCrises(crises: Record<string, CrisisInfo>): LionState {
@@ -165,11 +187,15 @@ export const useStore = create<Store>((set, get) => ({
   tick: 0,
   screenPositions: {},
   lionState: { active: false, targets: [] },
+  lionHud: null,
   selectedAgentId: null,
   walkOffsets: {},
   skillTransfers: [],
   setScreenPositions(screenPositions) {
     set({ screenPositions });
+  },
+  setLionHud(info) {
+    set({ lionHud: info });
   },
   selectAgent(agentId) {
     set({ selectedAgentId: agentId });
@@ -233,6 +259,7 @@ export const useStore = create<Store>((set, get) => ({
           resolved: false,
           startedAtTick: p.startedAtTick ?? ev.tick,
           deadlineTicks: p.deadlineTicks ?? 0,
+          startedAtMs: Date.now(),
         };
         if (p.type.toLowerCase() === "lion") {
           lionState = { active: true, crisisId: p.id, targets: p.targets };

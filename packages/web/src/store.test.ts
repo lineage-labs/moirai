@@ -12,6 +12,7 @@ describe("web store crisis state", () => {
       tick: 0,
       screenPositions: {},
       lionState: { active: false, targets: [] },
+      lionHud: null,
       selectedAgentId: null,
       walkOffsets: {},
       skillTransfers: [],
@@ -97,7 +98,7 @@ describe("web store crisis state", () => {
     expect(useStore.getState().agents["bob"]?.status).toBe("idle");
   });
 
-  it("spawns primary agents away from the event panel area", () => {
+  it("spawns primary agents on the invisible grid layout", () => {
     const store = useStore.getState();
 
     for (const id of ["alice", "bob", "charlie", "dave", "eve"]) {
@@ -105,15 +106,16 @@ describe("web store crisis state", () => {
     }
 
     const agents = useStore.getState().agents;
-    expect(agents["alice"]?.position).toEqual({ x: 330, y: 300 });
-    expect(agents["bob"]?.position).toEqual({ x: 395, y: 318 });
-    expect(agents["charlie"]?.position).toEqual({ x: 545, y: 250 });
-    expect(agents["dave"]?.position).toEqual({ x: 420, y: 500 });
-    expect(agents["eve"]?.position).toEqual({ x: 610, y: 390 });
+    expect(agents["alice"]?.position).toEqual({ x: 375, y: 440 });
+    expect(agents["bob"]?.position).toEqual({ x: 555, y: 360 });
+    expect(agents["charlie"]?.position).toEqual({ x: 645, y: 200 });
+    expect(agents["dave"]?.position).toEqual({ x: 465, y: 520 });
+    expect(agents["eve"]?.position).toEqual({ x: 735, y: 360 });
 
     const alice = agents["alice"]!.position;
     const bob = agents["bob"]!.position;
-    expect(Math.hypot(alice.x - bob.x, alice.y - bob.y)).toBeLessThan(80);
+    expect(alice.x).toBeLessThan(bob.x);
+    expect(alice.y).toBeGreaterThan(bob.y);
   });
 
   it("spawns replacement agents away from Charlie to avoid late-game overlap", () => {

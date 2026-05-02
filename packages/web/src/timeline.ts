@@ -17,6 +17,8 @@ const PRIORITY: Partial<Record<GameEvent["kind"], number>> = {
   CRISIS_OVER: 50,
 };
 
+export const MEANINGFUL_EVENT_KINDS = new Set(Object.keys(PRIORITY));
+
 function titleForEvent(event: GameEvent): string {
   switch (event.kind) {
     case "CRISIS_STARTED": {
@@ -63,6 +65,17 @@ export function tickHeadlines(events: GameEvent[], tick: number, limit = 3): Tic
     .filter((candidate) => candidate.tick === tick && PRIORITY[candidate.kind] != null)
     .sort((a, b) => (PRIORITY[b.kind] ?? 0) - (PRIORITY[a.kind] ?? 0))
     .slice(0, limit)
+    .map((event) => ({
+      kind: event.kind,
+      title: titleForEvent(event),
+      actorId: event.actorId,
+    }));
+}
+
+export function recentEventHeadlines(events: GameEvent[], limit = 8): TickHeadline[] {
+  return events
+    .filter((candidate) => MEANINGFUL_EVENT_KINDS.has(candidate.kind))
+    .slice(-limit)
     .map((event) => ({
       kind: event.kind,
       title: titleForEvent(event),
