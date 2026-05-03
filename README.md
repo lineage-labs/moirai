@@ -222,6 +222,9 @@ Second crisis of same type
 - `AgentMarketplace` handles `list()`, `delist()`, `buy()` entirely on-chain
 - Engine listens for on-chain `Sold` events and spawns the purchased agent with `inheritedSkillRoots` pre-seeded from the NFT metadata
 - `tokenURI()` returns a `data:application/json;base64` URI readable by on-chain explorers
+- Contracts (galileo testnet):
+  - Agent INFT: 0x5Ecf8D9517dD5cDB701a06Ea2df982A0d733E4E5
+  - MARKETPLACE_CONTRACT_ADDRESS=0xe0e0608062403944126d49c9C7e18e8d55242D57
 
 ---
 
