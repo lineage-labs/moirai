@@ -266,6 +266,8 @@ packages/
 ### Run
 
 ```bash
+# 0. Install dependencies
+pnpm install
 # 1. Generate AXL peer keys and start the P2P mesh
 pnpm axl:mesh:keys
 pnpm axl:mesh:up
