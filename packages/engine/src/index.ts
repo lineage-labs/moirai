@@ -347,7 +347,9 @@ function sendToAgent(entry: AgentEntry, msg: unknown): void {
   }
 }
 
-const REPLACEMENT_POOL = ["dave", "eve", "frank", "grace", "henry"];
+// Pool consumed in order — first death gets index 0, second gets index 1, etc.
+// Ordered so Bob (typically dies first) is replaced by Eve, leaving Dave for Alice.
+const REPLACEMENT_POOL = ["eve", "dave", "frank", "grace", "henry"];
 let replacementIdx = 0;
 
 function spawnAgent(
