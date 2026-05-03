@@ -1,0 +1,12 @@
+.git
+.vercel
+node_modules
+packages/web
+packages/demo-controller
+**/dist
+**/*.log
+.env
+.env.*
+*.md
+docs/
+scripts/

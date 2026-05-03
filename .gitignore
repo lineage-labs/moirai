@@ -12,3 +12,4 @@ typechain-types
 
 # Local AXL mesh keys (docker-compose.axl.yml)
 docker/axl/keys/*.pem
+.vercel
