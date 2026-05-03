@@ -428,7 +428,22 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       if (ev.kind === "SKILL_LEARNED" && ev.payload) {
-        const { from, skillId } = ev.payload as { from: string; skillId: string };
+        const { from, skillId, skillName: incomingName } = ev.payload as { from: string; skillId: string; skillName?: string };
+        // Seed the catalog so the panel can render the name immediately. Only fills the
+        // gap left by SKILL_ACCEPTED (which only fires on the inventing engine); for cross-
+        // engine learns or post-import teaches, this is the only source of the name.
+        if (incomingName && !skills[skillId]) {
+          skills[skillId] = {
+            id: skillId,
+            name: incomingName,
+            inventedBy: from,
+            tick: ev.tick,
+            reasonReceipt: "",
+            selfEvalReceipt: "",
+            selfEvalScore: 0,
+            verifiable: false,
+          };
+        }
         const a = agents[ev.actorId];
         if (a && !a.knownSkillIds.includes(skillId)) {
           agents[ev.actorId] = { ...a, knownSkillIds: [...a.knownSkillIds, skillId] };
@@ -447,7 +462,19 @@ export const useStore = create<Store>((set, get) => ({
       }
 
       if (ev.kind === "SKILL_INHERITED" && ev.payload) {
-        const { skillId } = ev.payload as { skillId: string };
+        const { skillId, skillName: incomingName } = ev.payload as { skillId: string; skillName?: string };
+        if (incomingName && !skills[skillId]) {
+          skills[skillId] = {
+            id: skillId,
+            name: incomingName,
+            inventedBy: "inherited",
+            tick: ev.tick,
+            reasonReceipt: "",
+            selfEvalReceipt: "",
+            selfEvalScore: 0,
+            verifiable: false,
+          };
+        }
         const a = agents[ev.actorId];
         if (a && !a.knownSkillIds.includes(skillId)) {
           agents[ev.actorId] = { ...a, knownSkillIds: [...a.knownSkillIds, skillId] };

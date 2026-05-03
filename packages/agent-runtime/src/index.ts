@@ -87,8 +87,9 @@ async function handleLearn(skillId: string, rootHash: string, from: string): Pro
 
     knownSkills.push(skill);
     // Emit SKILL_LEARNED first so engine's knownSkillIds contains skillId by the time
-    // META_SKILL_ROOT triggers the updateMetadata write.
-    const ev: Event = { kind: "SKILL_LEARNED", tick, actorId: agentId, payload: { from, skillId } };
+    // META_SKILL_ROOT triggers the updateMetadata write. Carry skillName so the UI store
+    // can render names for skills learned post-spawn (the catalog isn't seeded for these).
+    const ev: Event = { kind: "SKILL_LEARNED", tick, actorId: agentId, payload: { from, skillId, skillName: skill.name } };
     emit(ev);
     await kernel.storage.appendEvent(ev);
     const learnedRoot = storageAdapter.getSkillRoot(skillId);
@@ -139,11 +140,12 @@ async function boot(inheritedSkillRoots: Record<string, string>): Promise<void> 
     if (knownSkills.find((s) => s.id === skill.id)) continue;
     knownSkills.push(skill);
     // SKILL_INHERITED first, then META_SKILL_ROOT — same ordering invariant as handleLearn.
+    // Carry skillName so the UI store can render names for inherited skills.
     const ev: Event = {
       kind: "SKILL_INHERITED",
       tick,
       actorId: agentId,
-      payload: { skillId: skill.id },
+      payload: { skillId: skill.id, skillName: skill.name },
     };
     emit(ev);
     await kernel.storage.appendEvent(ev);
