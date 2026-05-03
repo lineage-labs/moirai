@@ -34,7 +34,17 @@ function LionPawIcon() {
 
 function ShopIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
       <line x1="3" y1="6" x2="21" y2="6" />
       <path d="M16 10a4 4 0 01-8 0" />
@@ -69,15 +79,21 @@ export default function App() {
   const events = useStore((s) => s.events);
 
   // Spawn coin particles whenever an AGENT_SOLD event arrives
-  const lastSold = events.filter(e => e.kind === "AGENT_SOLD").at(-1);
+  const lastSold = events.filter((e) => e.kind === "AGENT_SOLD").at(-1);
   useEffect(() => {
     if (!lastSold) return;
     const newCoins: Coin[] = Array.from({ length: 5 }, (_, i) => ({
       id: ++coinId.current,
       left: 8 + i * 10,
     }));
-    setCoins(prev => [...prev, ...newCoins]);
-    const t = setTimeout(() => setCoins(prev => prev.filter(c => !newCoins.find(n => n.id === c.id))), 800);
+    setCoins((prev) => [...prev, ...newCoins]);
+    const t = setTimeout(
+      () =>
+        setCoins((prev) =>
+          prev.filter((c) => !newCoins.find((n) => n.id === c.id)),
+        ),
+      800,
+    );
     return () => clearTimeout(t);
   }, [lastSold]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -107,7 +123,16 @@ export default function App() {
         fontFamily: "'DM Sans', system-ui, sans-serif",
       }}
     >
-      <div style={{ position: "absolute", inset: 0, zIndex: 1, background: "radial-gradient(circle at 50% 55%, rgba(255,214,128,0.08), rgba(7,5,3,0.26) 72%), linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10) 40%, rgba(0,0,0,0.22))", pointerEvents: "none" }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          background:
+            "radial-gradient(circle at 50% 55%, rgba(255,214,128,0.08), rgba(7,5,3,0.26) 72%), linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10) 40%, rgba(0,0,0,0.22))",
+          pointerEvents: "none",
+        }}
+      />
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <Scene3D />
       </div>
@@ -121,27 +146,62 @@ export default function App() {
       <TickTimeline />
       <TickCounter tick={tick} />
 
-      <div style={{
-        position: "absolute", top: 0, left: 0, right: 0,
-        height: 52,
-        zIndex: 50,
-        display: "grid",
-        gridTemplateColumns: "1.4fr 0.7fr 0.9fr 0.9fr 0.85fr 128px",
-        alignItems: "center",
-        background: "linear-gradient(180deg, rgba(18,14,10,0.92), rgba(16,13,10,0.74))",
-        borderBottom: "1px solid rgba(231, 190, 110, 0.16)",
-        boxShadow: "0 16px 38px rgba(0,0,0,0.34)",
-        backdropFilter: "blur(10px)",
-      }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 52,
+          zIndex: 50,
+          display: "grid",
+          gridTemplateColumns: "1.4fr 0.7fr 0.9fr 0.9fr 0.85fr 128px",
+          alignItems: "center",
+          background:
+            "linear-gradient(180deg, rgba(18,14,10,0.92), rgba(16,13,10,0.74))",
+          borderBottom: "1px solid rgba(231, 190, 110, 0.16)",
+          boxShadow: "0 16px 38px rgba(0,0,0,0.34)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
         <HudBrand />
         <HudSpeed />
         <HudBlock label="Day" value={`${day}  ${hour}:45`} />
-        <HudBlock label="World Health" value={`${health}%`} meter={health / 100} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 18px", borderLeft: "1px solid rgba(231, 190, 110, 0.12)", height: "100%" }}>
+        <HudBlock
+          label="World Health"
+          value={`${health}%`}
+          meter={health / 100}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 18px",
+            borderLeft: "1px solid rgba(231, 190, 110, 0.12)",
+            height: "100%",
+          }}
+        >
           <LionPawIcon />
           <div>
-            <div style={{ color: "#a88f6a", fontSize: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.7 }}>Crisis Level</div>
-            <div style={{ color: activeCrises.length ? "#ff8c74" : "#8fd16d", fontSize: 13, fontWeight: 800 }}>
+            <div
+              style={{
+                color: "#a88f6a",
+                fontSize: 8,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 0.7,
+              }}
+            >
+              Crisis Level
+            </div>
+            <div
+              style={{
+                color: activeCrises.length ? "#ff8c74" : "#8fd16d",
+                fontSize: 13,
+                fontWeight: 800,
+              }}
+            >
               {activeCrises.length ? "HIGH" : "LOW"}
             </div>
           </div>
@@ -152,9 +212,20 @@ export default function App() {
       <style>{COIN_CSS}</style>
 
       {/* Marketplace circle button */}
-      <div style={{ position: "absolute", bottom: 116, left: 17, zIndex: 45, width: 56, height: 56 }}>
-        {coins.map(c => (
-          <span key={c.id} className="coin-particle" style={{ left: c.left }}>💰</span>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 116,
+          left: 17,
+          zIndex: 45,
+          width: 56,
+          height: 56,
+        }}
+      >
+        {coins.map((c) => (
+          <span key={c.id} className="coin-particle" style={{ left: c.left }}>
+            💰
+          </span>
         ))}
         <button
           type="button"
@@ -196,14 +267,48 @@ export default function App() {
 
 function HudBrand() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 18 }}>
-      <div style={{ width: 26, height: 26, borderRadius: "50%", border: "2px dotted #d4a95f", boxShadow: "0 0 14px rgba(212,169,95,0.24)" }} />
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        paddingLeft: 18,
+      }}
+    >
+      <div
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          border: "2px dotted #d4a95f",
+          boxShadow: "0 0 14px rgba(212,169,95,0.24)",
+        }}
+      />
       <div>
-        <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 0.7, textTransform: "uppercase" }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 900,
+            letterSpacing: 0.7,
+            textTransform: "uppercase",
+          }}
+        >
           <span style={{ color: "#e9c982" }}>MOIRAI</span>
-          <span style={{ color: "#c9a86c", fontWeight: 400, fontSize: 11, letterSpacing: 0.5 }}> | SAVANNAH</span>
+          <span
+            style={{
+              color: "#c9a86c",
+              fontWeight: 400,
+              fontSize: 11,
+              letterSpacing: 0.5,
+            }}
+          >
+            {" "}
+            | SAVANNAH
+          </span>
         </div>
-        <div style={{ color: "#8e7b61", fontSize: 9 }}>A world of autonomous agents</div>
+        <div style={{ color: "#8e7b61", fontSize: 9 }}>
+          A world of autonomous agents
+        </div>
       </div>
     </div>
   );
@@ -211,10 +316,39 @@ function HudBrand() {
 
 function HudSpeed() {
   return (
-    <div style={{ height: "100%", borderLeft: "1px solid rgba(231, 190, 110, 0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 18px" }}>
+    <div
+      style={{
+        height: "100%",
+        borderLeft: "1px solid rgba(231, 190, 110, 0.12)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "0 18px",
+      }}
+    >
       <div>
-        <div style={{ color: "#a88f6a", fontSize: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.7 }}>Speed</div>
-        <div style={{ color: "#f0dfbd", fontSize: 17, fontWeight: 900, lineHeight: 1.1 }}>x2</div>
+        <div
+          style={{
+            color: "#a88f6a",
+            fontSize: 8,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: 0.7,
+          }}
+        >
+          Speed
+        </div>
+        <div
+          style={{
+            color: "#f0dfbd",
+            fontSize: 17,
+            fontWeight: 900,
+            lineHeight: 1.1,
+          }}
+        >
+          x2
+        </div>
       </div>
       <PauseControl />
     </div>
@@ -296,15 +430,36 @@ function TickCounter({ tick }: { tick: number }) {
         width: 106,
         borderRadius: 12,
         padding: "10px 12px 9px",
-        background: "linear-gradient(180deg, rgba(32, 24, 14, 0.92), rgba(16, 12, 8, 0.84))",
+        background:
+          "linear-gradient(180deg, rgba(32, 24, 14, 0.92), rgba(16, 12, 8, 0.84))",
         border: "1px solid rgba(231, 190, 110, 0.26)",
-        boxShadow: "0 20px 48px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,235,180,0.10)",
+        boxShadow:
+          "0 20px 48px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,235,180,0.10)",
         backdropFilter: "blur(12px)",
         textAlign: "center",
       }}
     >
-      <div style={{ color: "#bda16f", fontSize: 9, fontWeight: 900, letterSpacing: 1, textTransform: "uppercase" }}>Tick</div>
-      <div style={{ color: "#f6cf74", fontSize: 34, fontWeight: 950, lineHeight: 1, marginTop: 3, textShadow: "0 0 18px rgba(246,207,116,0.28)" }}>
+      <div
+        style={{
+          color: "#bda16f",
+          fontSize: 9,
+          fontWeight: 900,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+        }}
+      >
+        Tick
+      </div>
+      <div
+        style={{
+          color: "#f6cf74",
+          fontSize: 34,
+          fontWeight: 950,
+          lineHeight: 1,
+          marginTop: 3,
+          textShadow: "0 0 18px rgba(246,207,116,0.28)",
+        }}
+      >
         {tick}
       </div>
     </div>

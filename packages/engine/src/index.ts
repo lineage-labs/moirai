@@ -9,8 +9,13 @@ import { loadPersonality } from "@moirai/personality";
 import type { Event, Crisis, Skill } from "@moirai/shared";
 import type { AgentEntry, SkillEntry } from "./types.js";
 import {
-  inftAdapter, marketplaceAdapter, INFT_ENABLED, WORLD_ID,
-  buildMetadata, minifySvg, startContractListeners,
+  inftAdapter,
+  marketplaceAdapter,
+  INFT_ENABLED,
+  WORLD_ID,
+  buildMetadata,
+  minifySvg,
+  startContractListeners,
 } from "./inft.js";
 import { startHttpServer } from "./http.js";
 
@@ -119,7 +124,9 @@ wss.on("connection", (ws) => {
           `[engine] [marketplace] list requested agentId=${targetId} tokenId=${tokenId}`,
         );
         inftAdapter
-          .enqueueWrite(() => marketplaceAdapter!.list(tokenId, BigInt(salePriceWei), WORLD_ID))
+          .enqueueWrite(() =>
+            marketplaceAdapter!.list(tokenId, BigInt(salePriceWei), WORLD_ID),
+          )
           .then(() => {
             entry.listed = true;
             broadcast({
@@ -139,7 +146,11 @@ wss.on("connection", (ws) => {
               payload: { message: String(err) },
             } as unknown as Event);
           });
-      } else if (msg.kind === "MARKETPLACE_DELIST" && marketplaceAdapter && inftAdapter) {
+      } else if (
+        msg.kind === "MARKETPLACE_DELIST" &&
+        marketplaceAdapter &&
+        inftAdapter
+      ) {
         const { agentId: targetId, tokenId } = msg;
         if (!targetId || !tokenId) return;
         const entry = agents.get(targetId);
@@ -169,7 +180,11 @@ wss.on("connection", (ws) => {
           });
       } else if (msg.kind === "MARKETPLACE_GET_LISTINGS") {
         broadcastListings();
-      } else if (msg.kind === "MARKETPLACE_IMPORT" && marketplaceAdapter && inftAdapter) {
+      } else if (
+        msg.kind === "MARKETPLACE_IMPORT" &&
+        marketplaceAdapter &&
+        inftAdapter
+      ) {
         const { tokenId, salePriceWei } = msg as {
           kind: string;
           tokenId?: string;
@@ -180,7 +195,9 @@ wss.on("connection", (ws) => {
           `[engine] [marketplace] import requested tokenId=${tokenId}`,
         );
         inftAdapter
-          .enqueueWrite(() => marketplaceAdapter!.buy(tokenId, BigInt(salePriceWei)))
+          .enqueueWrite(() =>
+            marketplaceAdapter!.buy(tokenId, BigInt(salePriceWei)),
+          )
           .then(() => {
             console.log(
               `[engine] [marketplace] bought tokenId=${tokenId} — waiting for Transfer event to spawn`,
@@ -278,11 +295,16 @@ function broadcastListings(): void {
                 if (cached?.skill.description) return cached.skill;
                 if (!s.rootHash) return makeSkillStub(s);
                 try {
-                  const skill = await inftAdapter!.downloadJson<Skill>(s.rootHash);
+                  const skill = await inftAdapter!.downloadJson<Skill>(
+                    s.rootHash,
+                  );
                   skills.set(s.id, { skill, rootHash: s.rootHash });
                   return skill;
                 } catch (err) {
-                  console.error(`[engine] downloadJson failed for skill=${s.id} rootHash=${s.rootHash}:`, err);
+                  console.error(
+                    `[engine] downloadJson failed for skill=${s.id} rootHash=${s.rootHash}:`,
+                    err,
+                  );
                   return makeSkillStub(s);
                 }
               }),
@@ -295,7 +317,10 @@ function broadcastListings(): void {
               skills: hydrated.map((s) => ({ id: s.id, name: s.name })),
             };
           } catch (err) {
-            console.error(`[engine] readMetadata failed for tokenId=${l.tokenId}:`, err);
+            console.error(
+              `[engine] readMetadata failed for tokenId=${l.tokenId}:`,
+              err,
+            );
             return base;
           }
         }),
@@ -369,7 +394,9 @@ function spawnAgent(
     hunger: 0,
     listed: false,
     sold: false,
-    ...(personality.hunger && !isImported ? { hungerConfig: personality.hunger } : {}),
+    ...(personality.hunger && !isImported
+      ? { hungerConfig: personality.hunger }
+      : {}),
   };
   agents.set(id, entry);
 
@@ -387,27 +414,49 @@ function spawnAgent(
     if (existingTokenId) {
       // Token from another engine — marketplace import
       entry.tokenId = existingTokenId;
-      console.log(`[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${Object.keys(inheritedSkillRoots).length}`);
-      broadcast({ kind: "AGENT_IMPORTED", tick, actorId: id, payload: { tokenId: existingTokenId, skills: Object.keys(inheritedSkillRoots), ...contractAddressField } });
+      console.log(
+        `[engine] [iNFT] ${id}: imported from marketplace tokenId=${existingTokenId} skills=${
+          Object.keys(inheritedSkillRoots).length
+        }`,
+      );
+      broadcast({
+        kind: "AGENT_IMPORTED",
+        tick,
+        actorId: id,
+        payload: {
+          tokenId: existingTokenId,
+          skills: Object.keys(inheritedSkillRoots),
+          ...contractAddressField,
+        },
+      });
     } else {
       // Always mint fresh on engine start
       console.log(`[engine] [iNFT] ${id}: minting new NFT…`);
       readFile(join(AVATARS_DIR, `${personalityId}.svg`))
         .then((bytes) => {
-          entry.image = `data:image/svg+xml;base64,${Buffer.from(minifySvg(bytes.toString("utf8"))).toString("base64")}`;
+          entry.image = `data:image/svg+xml;base64,${Buffer.from(
+            minifySvg(bytes.toString("utf8")),
+          ).toString("base64")}`;
           return inftAdapter!.mint(id, buildMetadata(entry, skills, tick));
         })
         .then((tokenId) => {
           entry.tokenId = tokenId;
           console.log(`[engine] [iNFT] ${id}: minted tokenId=${tokenId}`);
-          broadcast({ kind: "AGENT_MINTED", tick, actorId: id, payload: { tokenId, ...contractAddressField } });
+          broadcast({
+            kind: "AGENT_MINTED",
+            tick,
+            actorId: id,
+            payload: { tokenId, ...contractAddressField },
+          });
           // Flush: any skills learned during mint were skipped (entry.tokenId was undefined).
           // Push them now so the on-chain metadata reflects current state.
           if (entry.knownSkillIds.size > 0 && inftAdapter) {
-            inftAdapter.updateMetadata(tokenId, buildMetadata(entry, skills, tick))
+            inftAdapter
+              .updateMetadata(tokenId, buildMetadata(entry, skills, tick))
               .catch(console.error);
           }
-        }).catch(console.error);
+        })
+        .catch(console.error);
     }
   }
 
@@ -431,24 +480,37 @@ function spawnAgent(
         skills.set(skillId, { ...existing, rootHash });
         // Persist NFT update right away — invent path lands here last.
         if (inftAdapter && entry.tokenId) {
-          inftAdapter.updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
+          inftAdapter
+            .updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
             .catch(console.error);
         }
       } else if (rootHash && inftAdapter) {
         // Cross-engine skill — fetch the real Skill from 0G, then update NFT.
         // Insert a stub keyed by name so buildMetadata can emit it even before download finishes.
         if (skillName) {
-          skills.set(skillId, { skill: makeSkillStub({ id: skillId, name: skillName }), rootHash });
+          skills.set(skillId, {
+            skill: makeSkillStub({ id: skillId, name: skillName }),
+            rootHash,
+          });
         }
-        inftAdapter.downloadJson<Skill>(rootHash)
+        inftAdapter
+          .downloadJson<Skill>(rootHash)
           .then((skill) => {
             skills.set(skillId, { skill, rootHash });
             if (inftAdapter && entry.tokenId) {
-              return inftAdapter.updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick));
+              return inftAdapter.updateMetadata(
+                entry.tokenId,
+                buildMetadata(entry, skills, tick),
+              );
             }
             return undefined;
           })
-          .catch((err) => console.error(`[engine] downloadJson failed for skill=${skillId} rootHash=${rootHash}:`, err));
+          .catch((err) =>
+            console.error(
+              `[engine] downloadJson failed for skill=${skillId} rootHash=${rootHash}:`,
+              err,
+            ),
+          );
       }
       return;
     }
@@ -467,7 +529,8 @@ function spawnAgent(
       // Persist NFT update immediately when rootHash is known — the invent path no longer
       // depends on a separate META_SKILL_ROOT line arriving in time.
       if (rootHash && inftAdapter && entry.tokenId) {
-        inftAdapter.updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
+        inftAdapter
+          .updateMetadata(entry.tokenId, buildMetadata(entry, skills, tick))
           .catch(console.error);
       }
     }
@@ -487,13 +550,17 @@ function spawnAgent(
         perCrisisResolvedAgents.set(crisisId, set);
         const allResolved = crisis.targets.every((targetId) => {
           const a = agents.get(targetId);
-          return !a?.alive || set.has(targetId) || agentCanResolve(targetId, crisis);
+          return (
+            !a?.alive || set.has(targetId) || agentCanResolve(targetId, crisis)
+          );
         });
         if (allResolved) {
           resolvedCrises.add(crisisId);
           activeCrises.delete(crisisId);
           perCrisisResolvedAgents.delete(crisisId);
-          const survived = crisis.targets.filter((tid) => agents.get(tid)?.alive);
+          const survived = crisis.targets.filter(
+            (tid) => agents.get(tid)?.alive,
+          );
           const died = crisis.targets.filter((tid) => !agents.get(tid)?.alive);
           const totalAlive = [...agents.values()].filter((a) => a.alive).length;
           broadcast({
@@ -514,7 +581,9 @@ function spawnAgent(
     ) {
       entry.listed = false;
       const tokenId = entry.tokenId;
-      inftAdapter.enqueueWrite(() => marketplaceAdapter!.delist(tokenId)).catch(console.error);
+      inftAdapter
+        .enqueueWrite(() => marketplaceAdapter!.delist(tokenId))
+        .catch(console.error);
       broadcast({
         kind: "AGENT_DELISTED",
         tick,
@@ -568,7 +637,12 @@ function spawnAgent(
         spawnAgent(
           nextId,
           inheritedSkillRoots,
-          [{ agentId: id, reason: code === 0 ? "hunger" : `exit code ${code}` }],
+          [
+            {
+              agentId: id,
+              reason: code === 0 ? "hunger" : `exit code ${code}`,
+            },
+          ],
           ancestorTokenIds,
         );
         broadcastPeerList();
@@ -582,10 +656,12 @@ function spawnAgent(
   // For imports, expose the inherited skills (id + name) so the UI can render the panel
   // immediately, sourced from NFT metadata. Names come from the engine's `skills` cache,
   // which spawnFromNFT already hydrated from 0G via rootHash.
-  const inheritedSkillsForUi = Object.keys(inheritedSkillRoots).flatMap((sid) => {
-    const s = skills.get(sid);
-    return s ? [{ id: sid, name: s.skill.name }] : [];
-  });
+  const inheritedSkillsForUi = Object.keys(inheritedSkillRoots).flatMap(
+    (sid) => {
+      const s = skills.get(sid);
+      return s ? [{ id: sid, name: s.skill.name }] : [];
+    },
+  );
   broadcast({
     kind: "AGENT_SPAWNED",
     tick,
@@ -820,8 +896,8 @@ function doTick(): void {
         entry.type === "LION"
           ? "A lion is nearby and hunting you. You must scare it away or defend yourself to survive."
           : entry.type === "HUNGER"
-            ? "You are starving. You must find, gather, or produce food using items around you to survive."
-            : `A ${entry.type.toLowerCase()} crisis is threatening your survival.`,
+          ? "You are starving. You must find, gather, or produce food using items around you to survive."
+          : `A ${entry.type.toLowerCase()} crisis is threatening your survival.`,
       startedAtTick: tick,
       deadlineTicks: entry.deadlineTicks,
       targets,

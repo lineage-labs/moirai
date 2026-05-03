@@ -236,7 +236,7 @@ async function handleTick(newTick: number, incomingCrises: Crisis[]): Promise<vo
 }
 
 type EngineMsg =
-  | { kind: "BOOT"; peerIds?: string[]; inheritedSkillRoots?: Record<string, string>; ancestorDeaths?: Array<{ agentId: string; reason: string }> }
+  | { kind: "BOOT"; tick?: number; peerIds?: string[]; inheritedSkillRoots?: Record<string, string>; ancestorDeaths?: Array<{ agentId: string; reason: string }> }
   | { kind: "TICK"; tick: number; crises: Crisis[] }
   | { kind: "PEERS"; peerIds: string[] }
   | { kind: "DIE"; reason?: string };
@@ -269,6 +269,7 @@ rl.on("line", (line) => {
   }
 
   if (msg.kind === "BOOT") {
+    if (msg.tick !== undefined) tick = msg.tick;
     knownPeerIds = msg.peerIds ?? [];
     ancestorDeaths = msg.ancestorDeaths ?? [];
     queue.push(() => boot(msg.inheritedSkillRoots ?? {}));
