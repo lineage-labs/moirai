@@ -279,13 +279,30 @@ export const useStore = create<Store>((set, get) => ({
 
       if (ev.kind === "AGENT_SPAWNED") {
         const count = Object.keys(agents).length;
-        const p = ev.payload as { traits?: string[]; name?: string; image?: string };
+        const p = ev.payload as { traits?: string[]; name?: string; image?: string; skills?: Array<{ id: string; name: string }> };
+        const inheritedSkills = p?.skills ?? [];
+        // Pre-populate the skills catalog with names from NFT so the panel can render them
+        // before any per-skill events arrive from the agent runtime.
+        for (const s of inheritedSkills) {
+          if (!skills[s.id]) {
+            skills[s.id] = {
+              id: s.id,
+              name: s.name,
+              inventedBy: "inherited",
+              tick: ev.tick,
+              reasonReceipt: "",
+              selfEvalReceipt: "",
+              selfEvalScore: 0,
+              verifiable: false,
+            };
+          }
+        }
         agents[ev.actorId] = {
           id: ev.actorId,
           name: p?.name,
           image: p?.image,
           alive: true,
-          knownSkillIds: [],
+          knownSkillIds: inheritedSkills.map((s) => s.id),
           status: "idle",
           position: positionFor(ev.actorId, count),
           traits: p?.traits,
@@ -445,8 +462,12 @@ export const useStore = create<Store>((set, get) => ({
       if (ev.kind === "AGENT_LISTED") {
         listedAgentIds = { ...listedAgentIds, [ev.actorId]: true };
       }
-      if (ev.kind === "AGENT_DELISTED" || ev.kind === "AGENT_SOLD") {
+      if (ev.kind === "AGENT_DELISTED") {
         listedAgentIds = { ...listedAgentIds, [ev.actorId]: false };
+      }
+      if (ev.kind === "AGENT_SOLD") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: false };
+        delete agents[ev.actorId];
       }
 
       lionState = lionStateFromCrises(crises);

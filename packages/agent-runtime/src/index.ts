@@ -86,9 +86,17 @@ async function handleLearn(skillId: string, rootHash: string, from: string): Pro
     }
 
     knownSkills.push(skill);
+    // Emit SKILL_LEARNED first so engine's knownSkillIds contains skillId by the time
+    // META_SKILL_ROOT triggers the updateMetadata write.
     const ev: Event = { kind: "SKILL_LEARNED", tick, actorId: agentId, payload: { from, skillId } };
     emit(ev);
     await kernel.storage.appendEvent(ev);
+    const learnedRoot = storageAdapter.getSkillRoot(skillId);
+    if (learnedRoot) {
+      process.stdout.write(
+        JSON.stringify({ _kind: "META_SKILL_ROOT", skillId, rootHash: learnedRoot, skillName: skill.name }) + "\n",
+      );
+    }
 
     // Agent can now handle a previously failed crisis thanks to the learned skill
     for (const [crisisId, crisis] of failedCrises) {
@@ -130,6 +138,7 @@ async function boot(inheritedSkillRoots: Record<string, string>): Promise<void> 
   for (const skill of inherited) {
     if (knownSkills.find((s) => s.id === skill.id)) continue;
     knownSkills.push(skill);
+    // SKILL_INHERITED first, then META_SKILL_ROOT — same ordering invariant as handleLearn.
     const ev: Event = {
       kind: "SKILL_INHERITED",
       tick,
@@ -138,6 +147,12 @@ async function boot(inheritedSkillRoots: Record<string, string>): Promise<void> 
     };
     emit(ev);
     await kernel.storage.appendEvent(ev);
+    const inheritedRoot = storageAdapter.getSkillRoot(skill.id);
+    if (inheritedRoot) {
+      process.stdout.write(
+        JSON.stringify({ _kind: "META_SKILL_ROOT", skillId: skill.id, rootHash: inheritedRoot, skillName: skill.name }) + "\n",
+      );
+    }
   }
 
   booted = true;
@@ -180,18 +195,18 @@ async function handleTick(newTick: number, incomingCrises: Crisis[]): Promise<vo
         failedCrises.set(crisisId, crisis);
       } else if (result.status === "accepted") {
         knownSkills.push(result.skill);
-
-        // Publish 0G Storage root hash back to engine for inheritance forwarding
+        // SKILL_ACCEPTED (emitted from inside evolve) now carries rootHash, so the engine
+        // can update NFT metadata immediately without a separate META_SKILL_ROOT trip.
         const rootHash = storageAdapter.getSkillRoot(result.skill.id);
-        if (rootHash) {
-          process.stdout.write(
-            JSON.stringify({ _kind: "META_SKILL_ROOT", skillId: result.skill.id, rootHash }) + "\n",
-          );
-        }
 
-        // Teach all peers over AXL
-        let peers = await kernel.net.topology();
-        if (peers.length === 0) peers = knownPeerIds.filter((p) => p !== agentId);
+        // Teach all peers over AXL.
+        // Intersect AXL topology (who's network-reachable) with engine's knownPeerIds
+        // (who's alive). AXL keeps a peer's identity registered after its process exits,
+        // so using topology alone whispers to dead peers; using knownPeerIds alone risks
+        // whispering to peers on a different AXL relay. Both filters together = correct set.
+        const axlPeers = await kernel.net.topology();
+        const aliveSet = new Set(knownPeerIds);
+        let peers = axlPeers.filter((p) => p !== agentId && (aliveSet.size === 0 || aliveSet.has(p)));
 
         for (const peer of peers) {
           console.error(`[${agentId}] AXL TEACH → ${peer} skillId=${result.skill.id} rootHash=${rootHash ?? "(none)"}`);

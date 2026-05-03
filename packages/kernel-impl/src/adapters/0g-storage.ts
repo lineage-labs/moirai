@@ -49,7 +49,7 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     this.expectedReplica = cfg.expectedReplica ?? 1;
   }
 
-  async putSkill(skill: Skill): Promise<{ id: string; sequenceId?: number }> {
+  async putSkill(skill: Skill): Promise<{ id: string; rootHash: string; sequenceId?: number }> {
     return withRetries(() => this.putSkillOnce(skill), this.maxRetries, this.initialBackoffMs);
   }
 
@@ -144,7 +144,7 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
     return this.signerPromise;
   }
 
-  private async putSkillOnce(skill: Skill): Promise<{ id: string; sequenceId?: number }> {
+  private async putSkillOnce(skill: Skill): Promise<{ id: string; rootHash: string; sequenceId?: number }> {
     const indexer = this.getIndexer();
     const signer = await this.getSigner();
     const bytes = new TextEncoder().encode(JSON.stringify(skill));
@@ -160,7 +160,7 @@ export class ZeroGStorageAdapter implements IStorageAdapter {
         ? (result as { txSeq: number }).txSeq
         : undefined;
       console.error(`[0G Storage] putSkill ✓ skill="${skill.name}" rootHash=${result.rootHash}${txSeq != null ? ` txSeq=${txSeq}` : ""}`);
-      return txSeq != null ? { id: skill.id, sequenceId: txSeq } : { id: skill.id };
+      return txSeq != null ? { id: skill.id, rootHash: result.rootHash, sequenceId: txSeq } : { id: skill.id, rootHash: result.rootHash };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       try {

@@ -17,7 +17,8 @@ const PRIORITY: Partial<Record<GameEvent["kind"], number>> = {
   SKILL_LEARNED: 70,
   SKILL_TAUGHT: 65,
   SKILL_DECLINED: 63,
-  SKILL_INHERITED: 62,
+  AGENT_RESCUED: 62,
+  SKILL_INHERITED: 61,
   AGENT_SPAWNED: 60,
   CRISIS_RESOLVED: 55,
   CRISIS_OVER: 50,
@@ -62,8 +63,18 @@ function titleForEvent(event: GameEvent): string {
     }
     case "SKILL_REJECTED":
       return `${event.actorId} skill rejected`;
-    case "SKILL_DECLINED":
-      return `${event.actorId} declined skill`;
+    case "SKILL_DECLINED": {
+      const payload = event.payload as { skillName?: string; reason?: string } | undefined;
+      return payload?.skillName
+        ? `${event.actorId} declined ${payload.skillName}`
+        : `${event.actorId} declined skill`;
+    }
+    case "AGENT_RESCUED": {
+      const payload = event.payload as { skillUsed?: string } | undefined;
+      return payload?.skillUsed
+        ? `${event.actorId} survived via ${payload.skillUsed}`
+        : `${event.actorId} survived crisis`;
+    }
     case "SKILL_INHERITED": {
       return `${event.actorId} inherited skill`;
     }

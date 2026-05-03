@@ -32,7 +32,8 @@ export class INFTAdapter {
   private readonly contract: ethers.Contract;
   private readonly indexer: Indexer;
   private readonly cfg: INFTAdapterConfig;
-  // Serialize all chain writes to avoid nonce conflicts when multiple agents act concurrently
+  // Serialize all chain writes from this wallet to avoid nonce conflicts. Shared
+  // with MarketplaceAdapter via enqueueWrite() since both adapters use the same wallet.
   private _writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(cfg: INFTAdapterConfig) {
@@ -47,6 +48,13 @@ export class INFTAdapter {
     const next = this._writeQueue.then(fn);
     this._writeQueue = next.catch(() => {});
     return next;
+  }
+
+  /** Public hook so peer adapters sharing this wallet (MarketplaceAdapter) can serialize
+   * their txs in the same queue. Without this, marketplace list/delist/buy can race against
+   * an in-flight updateMetadata and the second tx fails with "nonce too low". */
+  enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(fn);
   }
 
   get walletAddress(): string {
@@ -137,6 +145,20 @@ export class INFTAdapter {
     const rootHash = await this.contract.getFunction("metadataRootHash")(BigInt(tokenId)) as string;
     if (!rootHash) throw new Error(`[INFTAdapter] no rootHash for tokenId=${tokenId}`);
     return this.downloadMetadata(rootHash);
+  }
+
+  /** Generic 0G Storage read — fetches arbitrary JSON by rootHash. */
+  async downloadJson<T>(rootHash: string): Promise<T> {
+    const dir = await mkdtemp(join(tmpdir(), "moirai-blob-"));
+    const filePath = join(dir, "blob.json");
+    try {
+      const err = await this.indexer.download(rootHash, filePath, true);
+      if (err) throw err;
+      const text = await readFile(filePath, "utf8");
+      return JSON.parse(text) as T;
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   async getOwnedTokenIds(): Promise<string[]> {

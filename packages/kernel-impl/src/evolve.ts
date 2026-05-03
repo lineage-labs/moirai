@@ -156,7 +156,11 @@ export async function evolve(deps: EvolveDeps, input: EvolveInput): Promise<Evol
     kind: "SKILL_ACCEPTED",
     tick: context.tick,
     actorId: context.agentId,
-    payload: stored.sequenceId != null ? { skill, storageSequenceId: stored.sequenceId } : { skill },
+    payload: {
+      skill,
+      rootHash: stored.rootHash,
+      ...(stored.sequenceId != null ? { storageSequenceId: stored.sequenceId } : {}),
+    },
   });
 
   return { status: "accepted", skill };

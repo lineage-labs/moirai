@@ -151,9 +151,9 @@ function TargetRing() {
   );
 }
 
-function AgentCard({ agent, targeted }: { agent: AgentInfo; targeted: boolean }) {
+function AgentCard({ agent, targeted, listed }: { agent: AgentInfo; targeted: boolean; listed: boolean }) {
   const personality = getPersonality(agent.id);
-  const statusColor = agent.alive ? STATUS_COLOR[agent.status] : "#7a6d5d";
+  const statusColor = listed ? "#f0c040" : agent.alive ? STATUS_COLOR[agent.status] : "#7a6d5d";
 
   return (
     <div
@@ -166,14 +166,31 @@ function AgentCard({ agent, targeted }: { agent: AgentInfo; targeted: boolean })
     >
       {agent.alive && <HungerBar hunger={agent.hunger} />}
       <InventoryStrip agentId={agent.id} />
-      <img
-        src={getAgentAvatar(agent.id)}
-        alt={`${personality.name} avatar`}
-        width={88}
-        height={88}
-        style={{ display: "block", margin: "0 auto -4px", filter: "drop-shadow(0 10px 12px rgba(0,0,0,0.42))" }}
-      />
-      <div style={{ position: "relative", width: 132, height: 10, margin: "-10px auto 0" }}>
+      <div style={{ position: "relative", display: "inline-block" }}>
+        <img
+          src={getAgentAvatar(agent.id)}
+          alt={`${personality.name} avatar`}
+          width={88}
+          height={88}
+          style={{ display: "block", filter: "drop-shadow(0 10px 12px rgba(0,0,0,0.42))" }}
+        />
+        {listed && (
+          <div style={{
+            position: "absolute", top: 0, right: 0,
+            width: 28, height: 28,
+            borderRadius: "50%",
+            background: "rgba(10,8,4,0.82)",
+            border: "1.5px solid #f0c040",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 15, lineHeight: 1,
+            zIndex: 10,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.7), 0 0 10px rgba(240,192,64,0.4)",
+          }}>
+            💰
+          </div>
+        )}
+      </div>
+      <div style={{ position: "relative", width: 132, height: 10, margin: "0 auto" }}>
         {targeted && <TargetRing />}
       </div>
       <div
@@ -195,7 +212,7 @@ function AgentCard({ agent, targeted }: { agent: AgentInfo; targeted: boolean })
           {personality.name}
         </div>
         <div style={{ color: statusColor, fontFamily: F_BODY, fontSize: 13, letterSpacing: 0.7, textTransform: "uppercase" }}>
-          {agent.alive ? agent.status : "dead"} / {agent.knownSkillIds.length} skills
+          {listed ? "for sale" : agent.alive ? agent.status : "dead"} / {agent.knownSkillIds.length} skills
         </div>
       </div>
     </div>
@@ -206,6 +223,7 @@ export function AgentOverlay() {
   const agents = useStore((state) => state.agents);
   const lionState = useStore((state) => state.lionState);
   const screenPositions = useStore((state) => state.screenPositions);
+  const listedAgentIds = useStore((state) => state.listedAgentIds);
   const agentList = Object.values(agents);
   const targetedAgents = new Set(lionState.active ? lionState.targets : []);
   const layout = resolveAgentLayout(
@@ -236,7 +254,7 @@ export function AgentOverlay() {
             transition: "left 350ms ease, top 350ms ease",
           }}
         >
-          <AgentCard agent={agent} targeted={targetedAgents.has(agent.id)} />
+          <AgentCard agent={agent} targeted={targetedAgents.has(agent.id)} listed={listedAgentIds[agent.id] ?? false} />
         </div>
       ))}
     </div>

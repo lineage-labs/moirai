@@ -41,7 +41,7 @@ class StubStorage implements IStorageAdapter {
   events: Event[] = [];
   async putSkill(skill: Skill) {
     this.skills.set(skill.id, skill);
-    return { id: skill.id };
+    return { id: skill.id, rootHash: `stub-root-${skill.id}` };
   }
   async getSkill(id: string) {
     return this.skills.get(id) ?? null;

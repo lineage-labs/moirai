@@ -115,8 +115,10 @@ export function startContractListeners(ctx: {
 }): void {
   if (!inftAdapter || !marketplaceAdapter) return;
 
-  // Seller engine: buyer paid on-chain → kill agent + transfer token
-  marketplaceAdapter.contractInstance.on("Sold", (tokenId: bigint, buyer: string) => {
+  // Seller engine: buyer paid on-chain → kill agent.
+  // The marketplace contract already called transferFrom(seller, buyer, tokenId) before
+  // emitting Sold, so we must NOT call transfer() again — the seller no longer owns it.
+  marketplaceAdapter.contractInstance.on("Sold", (tokenId: bigint, _buyer: string) => {
     const entry = [...ctx.agents.values()].find(a => a.tokenId === tokenId.toString());
     if (!entry) return;
     entry.sold = true;
@@ -124,7 +126,6 @@ export function startContractListeners(ctx: {
     entry.listed = false;
     entry.proc.stdin!.write(JSON.stringify({ kind: "DIE", reason: "sold" }) + "\n");
     ctx.broadcast({ kind: "AGENT_SOLD", tick: ctx.getTick(), actorId: entry.id, payload: { tokenId: tokenId.toString() } });
-    inftAdapter!.transfer(tokenId.toString(), buyer).catch(console.error);
   });
 
   // Buyer engine: token arrived in our wallet → spawn the agent

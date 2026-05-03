@@ -59,12 +59,13 @@ async function fetchTopology(url: string): Promise<AxlTopology> {
  * publish) which otherwise silently routes test traffic to the wrong daemon.
  */
 async function preflightMesh(url1: string, url2: string, url3: string): Promise<void> {
-  const [t1, t2, t3] = await Promise.all([url1, url2, url3].map(fetchTopology)).catch((e) => {
+  const topologies = await Promise.all([url1, url2, url3].map(fetchTopology)).catch((e) => {
     throw new Error(
       `[axl preflight] could not reach one of ${url1}, ${url2}, ${url3}: ${(e as Error).message}. ` +
         `Run: pnpm axl:mesh:up`,
     );
   });
+  const [t1, t2, t3] = topologies as [AxlTopology, AxlTopology, AxlTopology];
   const pk1 = t1.our_public_key, pk2 = t2.our_public_key, pk3 = t3.our_public_key;
   if (!pk1 || !pk2 || !pk3) {
     throw new Error(`[axl preflight] /topology returned no our_public_key on at least one node`);

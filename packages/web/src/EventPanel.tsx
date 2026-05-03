@@ -35,7 +35,7 @@ const KIND_COLOR: Partial<Record<string, string>> = {
   AGENT_RESCUED:     "#8dae6b",
 };
 
-const NEUTRAL_KINDS = new Set(["REASONING_STARTED", "SELF_EVAL_STARTED", "AGENT_RESCUED"]);
+const NEUTRAL_KINDS = new Set(["REASONING_STARTED", "SELF_EVAL_STARTED"]);
 
 function label(k: string) {
   return k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -139,6 +139,12 @@ function Detail({ ev }: { ev: GameEvent }) {
     }
     case "REASONING_STARTED": break;
     case "SELF_EVAL_STARTED": break;
+    case "AGENT_RESCUED": {
+      const r = p as { crisisId?: string; crisisType?: string; skillUsed?: string };
+      if (r.crisisType) rows.push(<Row key="t" k="Crisis"><Accent c="#d58a55">{r.crisisType}</Accent></Row>);
+      if (r.skillUsed)  rows.push(<Row key="s" k="Skill Used"><Accent c="#8dae6b">{r.skillUsed}</Accent></Row>);
+      break;
+    }
     case "SKILL_PROPOSED": {
       const sk = (p as { candidate?: { name?: string; effect?: string; steps?: string[] } }).candidate ?? {};
       if (sk.name)          rows.push(<Row key="n"  k="Skill"><Accent c="#a9b86c">{sk.name}</Accent></Row>);
@@ -333,6 +339,11 @@ export function EventPanel({ events, style, onHide }: { events: GameEvent[]; sty
                   {label(ev.kind)}
                   {crisisId && <span style={{ color: "#a99578", fontSize: 10, marginLeft: 6 }}>{crisisId}</span>}
                   {skillUsed && <span style={{ color: "#a9b86c", fontSize: 10, marginLeft: 6 }}>via {skillUsed}</span>}
+                  {ev.kind === "SKILL_DECLINED" && (ev.payload as { reason?: string })?.reason && (
+                    <span style={{ color: "#be8b55", fontSize: 10, marginLeft: 6, fontStyle: "italic" }}>
+                      — {(ev.payload as { reason?: string }).reason}
+                    </span>
+                  )}
                 </span>
                 <span style={{
                   color: "#c4a46f",

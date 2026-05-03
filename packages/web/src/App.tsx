@@ -161,7 +161,10 @@ function HudBrand() {
     <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 18 }}>
       <div style={{ width: 26, height: 26, borderRadius: "50%", border: "2px dotted #d4a95f", boxShadow: "0 0 14px rgba(212,169,95,0.24)" }} />
       <div>
-        <div style={{ color: "#e9c982", fontSize: 13, fontWeight: 900, letterSpacing: 0.7, textTransform: "uppercase" }}>Emergent Civilisation</div>
+        <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 0.7, textTransform: "uppercase" }}>
+          <span style={{ color: "#e9c982" }}>MOIRAI</span>
+          <span style={{ color: "#c9a86c", fontWeight: 400, fontSize: 11, letterSpacing: 0.5 }}> | SAVANNAH</span>
+        </div>
         <div style={{ color: "#8e7b61", fontSize: 9 }}>A world of autonomous agents</div>
       </div>
     </div>

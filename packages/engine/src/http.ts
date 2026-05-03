@@ -85,11 +85,11 @@ export function startHttpServer(ctx: HttpContext): void {
 
     // --- /marketplace/delist ---
     if (method === "POST" && url === "/marketplace/delist") {
-      if (!marketplaceAdapter) { res.writeHead(503).end(JSON.stringify({ error: "iNFT disabled" })); return; }
+      if (!marketplaceAdapter || !inftAdapter) { res.writeHead(503).end(JSON.stringify({ error: "iNFT disabled" })); return; }
       const body = JSON.parse(await readBody(req)) as { tokenId: string };
       const entry = [...agents.values()].find(a => a.tokenId === body.tokenId);
       try {
-        await marketplaceAdapter.delist(body.tokenId);
+        await inftAdapter.enqueueWrite(() => marketplaceAdapter!.delist(body.tokenId));
         if (entry) entry.listed = false;
         broadcast({ kind: "AGENT_DELISTED", tick: getTick(), actorId: entry?.id ?? "engine", payload: { tokenId: body.tokenId, reason: "manual" } });
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true }));
@@ -123,7 +123,7 @@ export function startHttpServer(ctx: HttpContext): void {
       const listings = await marketplaceAdapter.getActiveListings();
       const listing = listings.find(l => l.tokenId === body.tokenId);
       if (!listing) { res.writeHead(400).end(JSON.stringify({ error: "not listed" })); return; }
-      await marketplaceAdapter.buy(body.tokenId, listing.salePriceWei);
+      await inftAdapter.enqueueWrite(() => marketplaceAdapter!.buy(body.tokenId, listing.salePriceWei));
       // spawnFromNFT triggered by Transfer event listener
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, tokenId: body.tokenId }));
       return;
