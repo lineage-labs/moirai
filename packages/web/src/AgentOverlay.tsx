@@ -168,7 +168,7 @@ function AgentCard({ agent, targeted, listed }: { agent: AgentInfo; targeted: bo
       <InventoryStrip agentId={agent.id} />
       <div style={{ position: "relative", display: "inline-block" }}>
         <img
-          src={getAgentAvatar(agent.id)}
+          src={agent.image ?? getAgentAvatar(agent.id)}
           alt={`${personality.name} avatar`}
           width={88}
           height={88}

@@ -354,6 +354,11 @@ function spawnAgent(
   });
 
   const personality = loadPersonality(personalityId);
+  // Hunger ticks only on the original local agents — not on imported NFT clones.
+  // An imported agent shares its personality (alice/charlie) with a local one, so loading
+  // hungerConfig for it would inject a second hunger crisis for the same name. Imported
+  // agents are showcases of bought NFTs; the hunger game mechanic stays with the originals.
+  const isImported = !!nftIdentity;
   const entry: AgentEntry = {
     id,
     ...(nftIdentity ? { personalityId } : {}),
@@ -364,7 +369,7 @@ function spawnAgent(
     hunger: 0,
     listed: false,
     sold: false,
-    ...(personality.hunger ? { hungerConfig: personality.hunger } : {}),
+    ...(personality.hunger && !isImported ? { hungerConfig: personality.hunger } : {}),
   };
   agents.set(id, entry);
 
@@ -606,20 +611,14 @@ async function spawnFromNFT(tokenId: string): Promise<string | null> {
   console.log(
     `[engine] [iNFT] spawnFromNFT: uniqueId=${uniqueId} skills=${metadata.skills.length}`,
   );
-  // Hydrate the skills Map from 0G — NFT is authoritative, no stubs.
-  await Promise.all(
-    metadata.skills.map(async (s) => {
-      if (skills.get(s.id)?.skill.description) return;
-      if (!s.rootHash) return;
-      try {
-        const skill = await inftAdapter!.downloadJson<Skill>(s.rootHash);
-        skills.set(s.id, { skill, rootHash: s.rootHash });
-        console.log(`[engine] [iNFT] hydrated skill from 0G: ${s.id} (${skill.name})`);
-      } catch (err) {
-        console.error(`[engine] [iNFT] downloadJson failed for skill=${s.id} rootHash=${s.rootHash}:`, err);
-      }
-    }),
-  );
+  // Pre-populate the skills Map with stubs (id, name, rootHash) so AGENT_SPAWNED can
+  // emit names immediately. Don't block the spawn on per-skill 0G downloads — the agent
+  // runtime fetches the full Skill bodies in boot() via listSkills(), and the engine's
+  // skills map gets upgraded with real bodies via the META_SKILL_ROOT events that follow.
+  for (const s of metadata.skills) {
+    if (skills.get(s.id)?.skill.description) continue;
+    skills.set(s.id, { skill: makeSkillStub(s), rootHash: s.rootHash });
+  }
   const inheritedSkillRoots = Object.fromEntries(
     metadata.skills.map((s) => [s.id, s.rootHash]),
   );

@@ -19,5 +19,8 @@ const AGENT_AVATARS: Record<string, string> = {
 };
 
 export function getAgentAvatar(agentId: string): string {
-  return AGENT_AVATARS[agentId] ?? alice;
+  if (AGENT_AVATARS[agentId]) return AGENT_AVATARS[agentId]!;
+  // Imported agents have IDs like "frank-124" — extract the personality prefix
+  const base = agentId.split("-")[0] ?? agentId;
+  return AGENT_AVATARS[base] ?? alice;
 }

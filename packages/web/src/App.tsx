@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useStore, connectWs } from "./store";
 import { Scene3D } from "./Scene3D";
 import { PauseControl } from "./PauseControl";
@@ -42,9 +42,44 @@ function ShopIcon() {
   );
 }
 
+const COIN_CSS = `
+@keyframes coinDrop {
+  0%   { transform: translateY(-18px) scale(0.7); opacity: 0; }
+  30%  { opacity: 1; }
+  80%  { transform: translateY(28px) scale(1); opacity: 1; }
+  100% { transform: translateY(40px) scale(0.8); opacity: 0; }
+}
+.coin-particle {
+  position: absolute;
+  pointer-events: none;
+  animation: coinDrop 0.7s ease-in forwards;
+  font-size: 14px;
+  top: -12px;
+  z-index: 50;
+}
+`;
+
+type Coin = { id: number; left: number };
+
 export default function App() {
   const { agents, crises, tick } = useStore();
   const [showMarketplace, setShowMarketplace] = useState(false);
+  const [coins, setCoins] = useState<Coin[]>([]);
+  const coinId = useRef(0);
+  const events = useStore((s) => s.events);
+
+  // Spawn coin particles whenever an AGENT_SOLD event arrives
+  const lastSold = events.filter(e => e.kind === "AGENT_SOLD").at(-1);
+  useEffect(() => {
+    if (!lastSold) return;
+    const newCoins: Coin[] = Array.from({ length: 5 }, (_, i) => ({
+      id: ++coinId.current,
+      left: 8 + i * 10,
+    }));
+    setCoins(prev => [...prev, ...newCoins]);
+    const t = setTimeout(() => setCoins(prev => prev.filter(c => !newCoins.find(n => n.id === c.id))), 800);
+    return () => clearTimeout(t);
+  }, [lastSold]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     connectWs(WS_URL);
@@ -114,40 +149,43 @@ export default function App() {
         <div />
       </div>
 
+      <style>{COIN_CSS}</style>
+
       {/* Marketplace circle button */}
-      <button
-        type="button"
-        onClick={() => setShowMarketplace((v) => !v)}
-        title="Marketplace"
-        aria-label="Toggle marketplace"
-        style={{
-          position: "absolute",
-          bottom: 116,
-          left: 17,
-          zIndex: 45,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          border: showMarketplace
-            ? "1.5px solid rgba(141,174,107,0.65)"
-            : "1px solid rgba(231, 190, 110, 0.28)",
-          background: showMarketplace
-            ? "rgba(141,174,107,0.18)"
-            : "linear-gradient(180deg, rgba(32,24,16,0.92), rgba(18,14,10,0.88))",
-          color: showMarketplace ? "#a9c882" : "#c4a46f",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          backdropFilter: "blur(10px)",
-          boxShadow: showMarketplace
-            ? "0 0 28px rgba(141,174,107,0.22), 0 8px 24px rgba(0,0,0,0.44)"
-            : "0 8px 24px rgba(0,0,0,0.44)",
-          transition: "all 0.18s",
-        }}
-      >
-        <ShopIcon />
-      </button>
+      <div style={{ position: "absolute", bottom: 116, left: 17, zIndex: 45, width: 56, height: 56 }}>
+        {coins.map(c => (
+          <span key={c.id} className="coin-particle" style={{ left: c.left }}>💰</span>
+        ))}
+        <button
+          type="button"
+          onClick={() => setShowMarketplace((v) => !v)}
+          title="Marketplace"
+          aria-label="Toggle marketplace"
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            border: showMarketplace
+              ? "1.5px solid rgba(141,174,107,0.65)"
+              : "1px solid rgba(231, 190, 110, 0.28)",
+            background: showMarketplace
+              ? "rgba(141,174,107,0.18)"
+              : "linear-gradient(180deg, rgba(32,24,16,0.92), rgba(18,14,10,0.88))",
+            color: showMarketplace ? "#a9c882" : "#c4a46f",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            backdropFilter: "blur(10px)",
+            boxShadow: showMarketplace
+              ? "0 0 28px rgba(141,174,107,0.22), 0 8px 24px rgba(0,0,0,0.44)"
+              : "0 8px 24px rgba(0,0,0,0.44)",
+            transition: "all 0.18s",
+          }}
+        >
+          <ShopIcon />
+        </button>
+      </div>
 
       {showMarketplace && (
         <MarketplaceModal onClose={() => setShowMarketplace(false)} />
