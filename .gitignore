@@ -1,0 +1,15 @@
+node_modules
+dist
+.turbo
+.DS_Store
+*.log
+.env
+.env.local
+.vscode
+.idea
+coverage
+typechain-types
+
+# Local AXL mesh keys (docker-compose.axl.yml)
+docker/axl/keys/*.pem
+.vercel

@@ -1,0 +1,43 @@
+{
+  "id": "savannah",
+  "physics": [
+    "lions fear pointy objects like sharpened sticks or spears",
+    "rocks can be thrown at predators to scare or injure them",
+    "sticks can be sharpened into spears or clubs",
+    "fire repels most animals including lions",
+    "loud noises and shouting can startle and scare lions away",
+    "berries and plants can suppress hunger",
+    "dry grass can be twisted into a snare to catch small animals",
+    "rocks can be used to crack open nuts or dig up edible roots",
+    "fire made from dry grass and rocks can be used to cook food",
+    "currently there are no small animals and rooted food"
+  ],
+  "resources": ["rocks", "sticks", "berries", "water", "dry grass"],
+  "topology": "open",
+  "crisisSchedule": [
+    {
+      "tick": 7,
+      "type": "LION",
+      "targets": ["alice", "bob"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 70,
+      "type": "LION",
+      "targets": ["dave"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 40,
+      "type": "HUNGER",
+      "targets": ["alice"],
+      "deadlineTicks": 30
+    },
+    {
+      "tick": 30,
+      "type": "HUNGER",
+      "targets": ["charlie"],
+      "deadlineTicks": 20
+    }
+  ]
+}

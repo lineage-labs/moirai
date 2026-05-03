@@ -1,0 +1,533 @@
+import { create } from "zustand";
+
+// Minimal event types mirrored locally (no workspace import needed at runtime)
+type EventKind =
+  | "WORLD_TICK"
+  | "AGENT_SPAWNED"
+  | "AGENT_DIED"
+  | "AGENT_HUNGER"
+  | "CRISIS_STARTED"
+  | "CRISIS_RESOLVED"
+  | "AGENT_RESCUED"
+  | "REASONING_STARTED"
+  | "SKILL_PROPOSED"
+  | "SELF_EVAL_STARTED"
+  | "SELF_EVAL_RESULT"
+  | "SKILL_ACCEPTED"
+  | "SKILL_REJECTED"
+  | "AXL_MESSAGE"
+  | "SKILL_TAUGHT"
+  | "SKILL_LEARNED"
+  | "SKILL_INHERITED"
+  | "SKILL_DECLINED"
+  | "CRISIS_OVER"
+  | "AGENT_MINTED"
+  | "AGENT_LISTED"
+  | "AGENT_DELISTED"
+  | "AGENT_SOLD"
+  | "AGENT_IMPORTED"
+  | "MARKETPLACE_ERROR"
+  | "MARKETPLACE_LISTINGS";
+
+export type GameEvent = {
+  kind: EventKind;
+  tick: number;
+  actorId: string;
+  receiptHash?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type AgentInfo = {
+  id: string;
+  name?: string;
+  image?: string;
+  alive: boolean;
+  knownSkillIds: string[];
+  status: "idle" | "reasoning" | "crisis";
+  position: { x: number; y: number };
+  hunger?: { current: number; threshold: number };
+  traits?: string[];
+};
+
+export type SkillInfo = {
+  id: string;
+  name: string;
+  inventedBy: string;
+  tick: number;
+  reasonReceipt?: string;
+  selfEvalReceipt?: string;
+  selfEvalScore?: number;
+  verifiable: boolean;
+  storageSequenceId?: number;
+};
+
+export type CrisisInfo = {
+  id: string;
+  type: string;
+  targets: string[];
+  resolved: boolean;
+  startedAtTick: number;
+  deadlineTicks: number;
+  startedAtMs: number;
+};
+
+export type EdgeInfo = {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+};
+
+export type ScreenPosition = { x: number; y: number };
+export type WalkOffset = { dx: number; dy: number };
+
+export type LionState = {
+  active: boolean;
+  crisisId?: string;
+  targets: string[];
+};
+
+/** Screen-space lion marker + banner (updated from Scene3D while hunting) */
+export type LionHudInfo = {
+  x: number;
+  y: number;
+  subtitle: string;
+};
+
+export type MarketListing = {
+  tokenId: string;
+  sellerEngine: string;
+  salePriceWei: string;
+  worldId: string;
+  active: boolean;
+  name?: string;
+  traits?: string[];
+  image?: string;
+  skills?: Array<{ id: string; name: string }>;
+};
+
+export type SkillTransferInfo = {
+  id: string;
+  from: string;
+  to: string;
+  skillName: string;
+  expiresAtMs: number;
+};
+
+type Store = {
+  agents: Record<string, AgentInfo>;
+  events: GameEvent[];
+  skills: Record<string, SkillInfo>;
+  crises: Record<string, CrisisInfo>;
+  edges: EdgeInfo[];
+  tick: number;
+  screenPositions: Record<string, ScreenPosition>;
+  lionPathScreenPoints: ScreenPosition[];
+  lionState: LionState;
+  lionHud: LionHudInfo | null;
+  selectedAgentId: string | null;
+  walkOffsets: Record<string, WalkOffset>;
+  skillTransfers: SkillTransferInfo[];
+  agentTokens: Record<string, string>; // agentId → tokenId
+  listedAgentIds: Record<string, boolean>; // agentId → listed?
+  marketListings: MarketListing[];
+  nftContractAddress: string | null;
+  toasts: { id: string; message: string; expiresAtMs: number }[];
+
+  handleEvent(ev: GameEvent): void;
+  setScreenPositions(screenPositions: Record<string, ScreenPosition>): void;
+  setLionPathScreenPoints(pts: ScreenPosition[]): void;
+  setLionHud(info: LionHudInfo | null): void;
+  selectAgent(agentId: string | null): void;
+  clearExpiredSkillTransfers(nowMs?: number): void;
+  addToast(message: string): void;
+  clearExpiredToasts(): void;
+};
+
+const GRID = { cols: 10, rows: 7 };
+const GRID_SIZE = { width: 900, height: 560 };
+const GRID_OFFSET = { x: 60, y: 80 };
+
+function gridToPixel(col: number, row: number): { x: number; y: number } {
+  const cellW = GRID_SIZE.width / GRID.cols;
+  const cellH = GRID_SIZE.height / GRID.rows;
+  return {
+    x: GRID_OFFSET.x + (col + 0.5) * cellW,
+    y: GRID_OFFSET.y + (row + 0.5) * cellH,
+  };
+}
+
+const POSITIONS: Record<string, { x: number; y: number }> = {
+  alice: gridToPixel(1, 5),
+  bob: gridToPixel(5, 3),
+  charlie: gridToPixel(6, 1),
+  dave: gridToPixel(4, 5),
+  eve: gridToPixel(7, 3),
+  frank: gridToPixel(7, 5),
+  grace: gridToPixel(2, 4),
+  henry: gridToPixel(8, 1),
+};
+
+function positionFor(id: string, agentCount: number): { x: number; y: number } {
+  if (POSITIONS[id]) return POSITIONS[id]!;
+  return gridToPixel(agentCount % GRID.cols, Math.floor(agentCount / GRID.cols) % GRID.rows);
+}
+
+function lionStateFromCrises(crises: Record<string, CrisisInfo>): LionState {
+  const activeLion = Object.values(crises).find((crisis) => !crisis.resolved && crisis.type.toLowerCase() === "lion");
+  return activeLion
+    ? { active: true, crisisId: activeLion.id, targets: activeLion.targets }
+    : { active: false, targets: [] };
+}
+
+function nextWalkOffsets(agents: Record<string, AgentInfo>): Record<string, WalkOffset> {
+  const offsets: Record<string, WalkOffset> = {};
+  for (const agent of Object.values(agents)) {
+    if (!agent.alive) continue;
+    offsets[agent.id] = {
+      dx: Math.round((Math.random() * 12 - 6) * 10) / 10,
+      dy: Math.round((Math.random() * 12 - 6) * 10) / 10,
+    };
+  }
+  return offsets;
+}
+
+function skillNameFor(skills: Record<string, SkillInfo>, skillId: string): string {
+  return skills[skillId]?.name ?? skillId.slice(0, 8);
+}
+
+function skillTransferFor(
+  skills: Record<string, SkillInfo>,
+  transfer: { from: string; to: string; skillId: string; tick: number; index: number },
+): SkillTransferInfo {
+  return {
+    id: `transfer-${transfer.from}-${transfer.to}-${transfer.skillId}-${transfer.tick}-${transfer.index}`,
+    from: transfer.from,
+    to: transfer.to,
+    skillName: skillNameFor(skills, transfer.skillId),
+    expiresAtMs: Date.now() + 3000,
+  };
+}
+
+export const useStore = create<Store>((set, get) => ({
+  agents: {},
+  events: [],
+  skills: {},
+  crises: {},
+  edges: [],
+  tick: 0,
+  screenPositions: {},
+  lionPathScreenPoints: [],
+  lionState: { active: false, targets: [] },
+  lionHud: null,
+  selectedAgentId: null,
+  walkOffsets: {},
+  skillTransfers: [],
+  agentTokens: {},
+  listedAgentIds: {},
+  marketListings: [],
+  nftContractAddress: null,
+  toasts: [],
+  setScreenPositions(screenPositions) {
+    set({ screenPositions });
+  },
+  setLionPathScreenPoints(pts) {
+    set({ lionPathScreenPoints: pts });
+  },
+  setLionHud(info) {
+    set({ lionHud: info });
+  },
+  selectAgent(agentId) {
+    set({ selectedAgentId: agentId });
+  },
+  clearExpiredSkillTransfers(nowMs = Date.now()) {
+    set((state) => ({
+      skillTransfers: state.skillTransfers.filter((transfer) => transfer.expiresAtMs > nowMs),
+    }));
+  },
+  addToast(message) {
+    const id = `${Date.now()}-${Math.random()}`;
+    set((state) => ({
+      toasts: [...state.toasts, { id, message, expiresAtMs: Date.now() + 3500 }],
+    }));
+  },
+  clearExpiredToasts(nowMs = Date.now()) {
+    set((state) => ({ toasts: state.toasts.filter((t) => t.expiresAtMs > nowMs) }));
+  },
+
+  handleEvent(ev: GameEvent) {
+    set((state) => {
+      const agents = { ...state.agents };
+      const skills = { ...state.skills };
+      const crises = { ...state.crises };
+      const edges = [...state.edges];
+      const skillTransfers = [...state.skillTransfers];
+      let walkOffsets = state.walkOffsets;
+      let lionState = state.lionState;
+      let agentTokens = state.agentTokens;
+      let listedAgentIds = state.listedAgentIds;
+      let nftContractAddress = state.nftContractAddress;
+      // State-sync messages — update state but don't appear in the feed
+      const silenced = ev.kind === "AGENT_HUNGER" || ev.kind === "MARKETPLACE_LISTINGS";
+      const events = silenced ? state.events : [...state.events, ev].slice(-200);
+      let tick = state.tick;
+
+      if (ev.kind === "WORLD_TICK") {
+        tick = ev.tick;
+        walkOffsets = nextWalkOffsets(agents);
+      }
+
+      if (ev.kind === "AGENT_SPAWNED") {
+        const count = Object.keys(agents).length;
+        const p = ev.payload as { traits?: string[]; name?: string; image?: string; skills?: Array<{ id: string; name: string }> };
+        const inheritedSkills = p?.skills ?? [];
+        // Pre-populate the skills catalog with names from NFT so the panel can render them
+        // before any per-skill events arrive from the agent runtime.
+        for (const s of inheritedSkills) {
+          if (!skills[s.id]) {
+            skills[s.id] = {
+              id: s.id,
+              name: s.name,
+              inventedBy: "inherited",
+              tick: ev.tick,
+              reasonReceipt: "",
+              selfEvalReceipt: "",
+              selfEvalScore: 0,
+              verifiable: false,
+            };
+          }
+        }
+        agents[ev.actorId] = {
+          id: ev.actorId,
+          name: p?.name,
+          image: p?.image,
+          alive: true,
+          knownSkillIds: inheritedSkills.map((s) => s.id),
+          status: "idle",
+          position: positionFor(ev.actorId, count),
+          traits: p?.traits,
+        };
+      }
+
+      if (ev.kind === "AGENT_DIED") {
+        const a = agents[ev.actorId];
+        if (a) agents[ev.actorId] = { ...a, alive: false, status: "idle" };
+        // Auto-resolve any lion crisis whose targets are all dead (e.g. died from hunger mid-hunt)
+        for (const [cid, crisis] of Object.entries(crises)) {
+          if (crisis.resolved || crisis.type.toLowerCase() !== "lion") continue;
+          if (crisis.targets.every((id) => !agents[id]?.alive)) {
+            crises[cid] = { ...crisis, resolved: true };
+          }
+        }
+      }
+
+      if (ev.kind === "AGENT_HUNGER" && ev.payload) {
+        const { hunger, threshold } = ev.payload as { hunger: number; threshold: number };
+        const a = agents[ev.actorId];
+        if (a) agents[ev.actorId] = { ...a, hunger: { current: hunger, threshold } };
+      }
+
+      if (ev.kind === "CRISIS_STARTED" && ev.payload) {
+        const p = ev.payload as { id: string; type: string; targets: string[]; startedAtTick?: number; deadlineTicks?: number };
+        crises[p.id] = {
+          id: p.id,
+          type: p.type,
+          targets: p.targets,
+          resolved: false,
+          startedAtTick: p.startedAtTick ?? ev.tick,
+          deadlineTicks: p.deadlineTicks ?? 0,
+          startedAtMs: Date.now(),
+        };
+        if (p.type.toLowerCase() === "lion") {
+          lionState = { active: true, crisisId: p.id, targets: p.targets };
+        }
+        for (const t of p.targets) {
+          const a = agents[t];
+          if (a?.alive) agents[t] = { ...a, status: "crisis" };
+        }
+      }
+
+      if (ev.kind === "CRISIS_RESOLVED" && ev.payload) {
+        const resolved = ev.payload as { crisisId: string; survived?: string[]; died?: string[] };
+        const crisisId = resolved.crisisId;
+        const c = crises[crisisId];
+        if (ev.actorId === "engine") {
+          if (c) crises[crisisId] = { ...c, resolved: true };
+          if (lionState.crisisId === crisisId) {
+            lionState = { active: false, targets: [] };
+          }
+        }
+        const resetIds = [...(resolved.survived ?? []), ...(resolved.died ?? [])];
+        for (const id of resetIds.length > 0 ? resetIds : c?.targets ?? []) {
+          const a = agents[id];
+          if (!a) continue;
+          agents[id] = resolved.died?.includes(id)
+            ? { ...a, alive: false, status: "idle" }
+            : { ...a, status: "idle" };
+        }
+        const a = agents[ev.actorId];
+        if (a) agents[ev.actorId] = { ...a, status: "idle" };
+      }
+
+      if (ev.kind === "CRISIS_OVER" && ev.payload) {
+        const crisisId = ev.payload["crisisId"] as string;
+        const c = crises[crisisId];
+        if (c) crises[crisisId] = { ...c, resolved: true };
+        const survived = ev.payload["survived"] as string[];
+        const killed = ev.payload["killed"] as string[];
+        for (const id of survived) {
+          const a = agents[id];
+          if (a) agents[id] = { ...a, status: "idle" };
+        }
+        for (const id of killed) {
+          const a = agents[id];
+          if (a) agents[id] = { ...a, alive: false, status: "idle" };
+        }
+        if (lionState.crisisId === crisisId) {
+          lionState = { active: false, targets: [] };
+        }
+      }
+
+      if (ev.kind === "REASONING_STARTED") {
+        const a = agents[ev.actorId];
+        if (a) agents[ev.actorId] = { ...a, status: "reasoning" };
+      }
+
+      if (ev.kind === "SKILL_ACCEPTED" && ev.payload) {
+        const skill = ev.payload["skill"] as {
+          id: string;
+          name: string;
+          provenance: {
+            inventedBy: string;
+            inventedAt: number;
+            reasonReceipt: string;
+            selfEvalReceipt: string;
+            selfEvalScore: number;
+          };
+        };
+        const seqId = ev.payload["storageSequenceId"] as number | undefined;
+        skills[skill.id] = {
+          id: skill.id,
+          name: skill.name,
+          inventedBy: skill.provenance.inventedBy,
+          tick: skill.provenance.inventedAt,
+          reasonReceipt: skill.provenance.reasonReceipt,
+          selfEvalReceipt: skill.provenance.selfEvalReceipt,
+          selfEvalScore: skill.provenance.selfEvalScore,
+          verifiable: !!ev.receiptHash,
+          storageSequenceId: seqId,
+        };
+        const a = agents[ev.actorId];
+        if (a) {
+          agents[ev.actorId] = {
+            ...a,
+            knownSkillIds: [...a.knownSkillIds, skill.id],
+            status: "idle",
+          };
+        }
+      }
+
+      if (ev.kind === "SKILL_LEARNED" && ev.payload) {
+        const { from, skillId, skillName: incomingName } = ev.payload as { from: string; skillId: string; skillName?: string };
+        // Seed the catalog so the panel can render the name immediately. Only fills the
+        // gap left by SKILL_ACCEPTED (which only fires on the inventing engine); for cross-
+        // engine learns or post-import teaches, this is the only source of the name.
+        if (incomingName && !skills[skillId]) {
+          skills[skillId] = {
+            id: skillId,
+            name: incomingName,
+            inventedBy: from,
+            tick: ev.tick,
+            reasonReceipt: "",
+            selfEvalReceipt: "",
+            selfEvalScore: 0,
+            verifiable: false,
+          };
+        }
+        const a = agents[ev.actorId];
+        if (a && !a.knownSkillIds.includes(skillId)) {
+          agents[ev.actorId] = { ...a, knownSkillIds: [...a.knownSkillIds, skillId] };
+        }
+        const edgeId = `teach-${from}-${ev.actorId}-${skillId}`;
+        const skillName = skillNameFor(skills, skillId);
+        if (!edges.find((e) => e.id === edgeId)) {
+          edges.push({ id: edgeId, from, to: ev.actorId, label: skillName });
+        }
+        skillTransfers.push(skillTransferFor(skills, { from, to: ev.actorId, skillId, tick: ev.tick, index: skillTransfers.length }));
+      }
+
+      if (ev.kind === "SKILL_TAUGHT" && ev.payload) {
+        const { to, skillId } = ev.payload as { to: string; skillId: string };
+        skillTransfers.push(skillTransferFor(skills, { from: ev.actorId, to, skillId, tick: ev.tick, index: skillTransfers.length }));
+      }
+
+      if (ev.kind === "SKILL_INHERITED" && ev.payload) {
+        const { skillId, skillName: incomingName } = ev.payload as { skillId: string; skillName?: string };
+        if (incomingName && !skills[skillId]) {
+          skills[skillId] = {
+            id: skillId,
+            name: incomingName,
+            inventedBy: "inherited",
+            tick: ev.tick,
+            reasonReceipt: "",
+            selfEvalReceipt: "",
+            selfEvalScore: 0,
+            verifiable: false,
+          };
+        }
+        const a = agents[ev.actorId];
+        if (a && !a.knownSkillIds.includes(skillId)) {
+          agents[ev.actorId] = { ...a, knownSkillIds: [...a.knownSkillIds, skillId] };
+        }
+      }
+
+      if (ev.kind === "AGENT_MINTED" || ev.kind === "AGENT_LISTED" || ev.kind === "AGENT_IMPORTED") {
+        const { tokenId, contractAddress } = ev.payload as { tokenId: string; contractAddress?: string };
+        agentTokens = { ...agentTokens, [ev.actorId]: tokenId };
+        if (contractAddress && !nftContractAddress) nftContractAddress = contractAddress;
+      }
+      if (ev.kind === "AGENT_LISTED") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: true };
+      }
+      if (ev.kind === "AGENT_DELISTED") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: false };
+      }
+      if (ev.kind === "AGENT_SOLD") {
+        listedAgentIds = { ...listedAgentIds, [ev.actorId]: false };
+        delete agents[ev.actorId];
+      }
+
+      lionState = lionStateFromCrises(crises);
+
+      if (ev.kind === "MARKETPLACE_LISTINGS" && ev.payload) {
+        const { listings } = ev.payload as { listings: MarketListing[] };
+        return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, marketListings: listings, nftContractAddress };
+      }
+
+      return { agents, skills, crises, edges, events, tick, lionState, walkOffsets, skillTransfers, agentTokens, listedAgentIds, nftContractAddress };
+    });
+  },
+}));
+
+let _ws: WebSocket | null = null;
+
+export function connectWs(url: string): void {
+  // Prevent stacking connections on hot-reload or double-invocation
+  if (_ws && (_ws.readyState === WebSocket.CONNECTING || _ws.readyState === WebSocket.OPEN)) return;
+  _ws = new WebSocket(url);
+  _ws.onmessage = (e) => {
+    try {
+      const ev = JSON.parse(e.data as string) as GameEvent;
+      useStore.getState().handleEvent(ev);
+    } catch {
+      // ignore
+    }
+  };
+  _ws.onclose = () => setTimeout(() => connectWs(url), 2000);
+}
+
+export function sendWs(msg: unknown): void {
+  if (_ws?.readyState === WebSocket.OPEN) {
+    _ws.send(JSON.stringify(msg));
+  }
+}

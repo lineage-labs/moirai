@@ -1,0 +1,32 @@
+{
+  "name": "moirai",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "simulate:run": "bash ./scripts/simulate-run.sh",
+    "axl:mesh:keys": "bash ./scripts/axl-keys.sh",
+    "axl:mesh:up": "docker compose -f docker-compose.axl.yml up -d --build",
+    "axl:mesh:down": "docker compose -f docker-compose.axl.yml down",
+    "engine": "pnpm --filter @moirai/engine start",
+    "web": "pnpm --filter @moirai/web dev",
+    "demo": "node packages/demo-controller/src/index.ts"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^1.6.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "tsx": "~4.8.0"
+    }
+  }
+}
